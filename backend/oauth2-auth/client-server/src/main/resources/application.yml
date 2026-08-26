@@ -1,0 +1,27 @@
+# ============================================================
+# OAuth2 客户端 — 公共配置
+# ============================================================
+server:
+  port: 18087
+  servlet:
+    session:
+      cookie:
+        name: JSESSIONID_LAB
+
+spring:
+  application:
+    name: security-oauth2-client
+  profiles:
+    active: @spring.profiles.active@
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+logging:
+  level:
+    root: INFO
+    com.lab.securityoauth2client: DEBUG
+    org.springframework.security.oauth2.client: DEBUG
+    org.springframework.security.web.authentication: DEBUG

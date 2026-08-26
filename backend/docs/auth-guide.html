@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spring Security 四种认证方式详解</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #f5f5f5;
+            color: #333;
+            line-height: 1.7;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 860px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            font-size: 24px;
+            margin-bottom: 8px;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #888;
+            font-size: 14px;
+            margin-bottom: 30px;
+        }
+
+        h2 {
+            font-size: 20px;
+            margin: 28px 0 12px;
+            padding-bottom: 6px;
+            border-bottom: 2px solid #3498db;
+        }
+
+        h3 {
+            font-size: 16px;
+            margin: 16px 0 8px;
+            color: #555;
+        }
+
+        p {
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+
+        .card {
+            background: #fff;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 10px 0;
+            font-size: 13px;
+        }
+
+        th, td {
+            border: 1px solid #e0e0e0;
+            padding: 8px 12px;
+            text-align: left;
+        }
+
+        th {
+            background: #f0f7ff;
+            font-weight: 600;
+        }
+
+        pre {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 14px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-size: 12px;
+            margin: 10px 0;
+        }
+
+        code {
+            background: #f0f0f0;
+            padding: 1px 5px;
+            border-radius: 3px;
+            font-size: 0.9em;
+        }
+
+        .tag {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            color: #fff;
+            margin-right: 4px;
+        }
+
+        .tag-session {
+            background: #27ae60;
+        }
+
+        .tag-jwt {
+            background: #e67e22;
+        }
+
+        .tag-opaque {
+            background: #8e44ad;
+        }
+
+        .tag-oauth2 {
+            background: #3498db;
+        }
+
+        .flow {
+            padding: 12px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            font-size: 13px;
+            margin: 8px 0;
+        }
+
+        .flow span {
+            color: #3498db;
+            font-weight: 600;
+        }
+
+        .nav {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin-bottom: 24px;
+        }
+
+        .nav a {
+            display: inline-block;
+            padding: 8px 18px;
+            border-radius: 6px;
+            color: #fff;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 600;
+            transition: opacity .2s;
+        }
+
+        .nav a:hover {
+            opacity: .85;
+        }
+
+        .nav .nv-session {
+            background: #27ae60;
+        }
+
+        .nav .nv-jwt {
+            background: #e67e22;
+        }
+
+        .nav .nv-opaque {
+            background: #8e44ad;
+        }
+
+        .nav .nv-oauth2 {
+            background: #3498db;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+
+    <div class="nav">
+        <a class="nv-session" href="/session/">🔐 Session Demo</a>
+        <a class="nv-jwt" href="/jwt/">🎫 JWT Demo</a>
+        <a class="nv-opaque" href="/opaque/">🎟️ Opaque Demo</a>
+        <a class="nv-oauth2" href="/oauth2/">🔑 OAuth2 Demo</a>
+    </div>
+
+    <h1>🔐 Spring Security 四种认证方式详解</h1>
+    <p class="subtitle">基于 spring-security-auth-lab 项目的完整分析</p>
+
+    <!-- ============================================================ -->
+    <h2>一、总体对比</h2>
+
+    <table>
+        <tr>
+            <th>维度</th>
+            <th><span class="tag tag-session">Session</span> 会话认证</th>
+            <th><span class="tag tag-jwt">JWT</span> 令牌认证</th>
+            <th><span class="tag tag-opaque">Opaque</span> 不透明令牌</th>
+            <th><span class="tag tag-oauth2">OAuth2</span> 三方认证</th>
+        </tr>
+        <tr>
+            <td>端口</td>
+            <td>18082</td>
+            <td>18083</td>
+            <td>18088</td>
+            <td>18085 / 18086 / 18087</td>
+        </tr>
+        <tr>
+            <td>核心依赖</td>
+            <td>spring-session-data-redis</td>
+            <td>jjwt (io.jsonwebtoken)</td>
+            <td>spring-security-oauth2-resource-server</td>
+            <td>spring-security-oauth2-client<br>spring-authorization-server</td>
+        </tr>
+        <tr>
+            <td>有无状态</td>
+            <td>有状态（服务端存 session）</td>
+            <td>无状态（token 自包含）</td>
+            <td>有状态（Redis 查 token）</td>
+            <td>混合（客户端有状态，资源服务器无状态）</td>
+        </tr>
+        <tr>
+            <td>存储</td>
+            <td>Redis 存 session</td>
+            <td>无（客户端存 token）</td>
+            <td>Redis 存 token → 用户映射</td>
+            <td>客户端：Session Cookie<br>资源服务器：验 JWT 签名</td>
+        </tr>
+        <tr>
+            <td>适用场景</td>
+            <td>传统 Web 应用</td>
+            <td>微服务 / 移动端 API</td>
+            <td>需要服务端可控的 API</td>
+            <td>第三方登录 / 授权</td>
+        </tr>
+    </table>
+
+    <!-- ============================================================ -->
+    <h2>二、Session 会话认证 <span class="tag tag-session">session-auth</span></h2>
+
+    <div class="card">
+        <h3>原理</h3>
+        <p>
+            最传统的 Web 认证方式。用户登录后，服务端创建一个 <b>Session</b>，并把 Session ID 通过 Cookie（<code>JSESSIONID_LAB</code>）发给浏览器。
+            之后每次请求浏览器自动带上 Cookie，服务端根据 Session ID 从 Redis 中找回用户的登录信息。
+        </p>
+
+        <h3>认证流程</h3>
+        <div class="flow">
+            <p><span>1.</span> 浏览器 POST /login（表单提交 username + password）</p>
+            <p><span>2.</span> Spring Security 的 <b>UsernamePasswordAuthenticationFilter</b> 拦截请求</p>
+            <p><span>3.</span> <b>DaoAuthenticationProvider</b> 调用 UserDetailsService 从 MySQL 查用户</p>
+            <p><span>4.</span> <b>BCryptPasswordEncoder</b> 比对密码</p>
+            <p><span>5.</span> 认证成功 → 创建 Session → 存入 Redis（key: <code>spring:session:lab:...</code>）</p>
+            <p><span>6.</span> 响应 Set-Cookie: <code>JSESSIONID_LAB=xxx</code></p>
+            <p><span>7.</span> 后续请求：浏览器带 Cookie → <b>SessionRepositoryFilter</b> 从 Redis 恢复 Session → 取出认证信息
+            </p>
+        </div>
+
+        <h3>关键配置</h3>
+        <pre># application.yml
+spring:
+  session:
+    store-type: redis       # Session 存 Redis
+    timeout: 30m            # 30 分钟过期
+  security:
+    user:
+      name: fallback-user   # 兜底用户（UserDetailsService 找不到时用）</pre>
+
+        <h3>优点</h3>
+        <p>• 成熟稳定，Spring Security 开箱即用<br>
+            • 服务端可控：随时踢人、改权限立即生效<br>
+            • 前端简单：浏览器自动管理 Cookie</p>
+
+        <h3>缺点</h3>
+        <p>• 服务端有状态，水平扩展需要共享 Session（Redis）<br>
+            • Cookie 有 CSRF 风险（本模块已针对 API 禁用 CSRF）<br>
+            • 不适合移动端 App / 前后端分离的 API</p>
+    </div>
+
+    <!-- ============================================================ -->
+    <h2>三、JWT 令牌认证 <span class="tag tag-jwt">jwt-auth</span></h2>
+
+    <div class="card">
+        <h3>原理</h3>
+        <p>
+            <b>JWT（JSON Web Token）</b> 是一个自包含的令牌，用户信息直接编码在 Token 里。
+            服务端用密钥签名，客户端收到 Token 后存起来（localStorage/内存），每次请求放在 Authorization Header 里。
+            服务端验证签名即可，<b>不需要查数据库或 Redis</b>。
+        </p>
+
+        <h3>JWT 结构</h3>
+        <pre>Header.Payload.Signature
+eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c
+
+Header:  { "alg": "HS256", "typ": "JWT" }
+Payload: { "sub": "user", "iat": 1516239022, "exp": 1516239022, "authorities": ["ROLE_USER"] }
+Signature: HMAC-SHA256(base64(Header) + "." + base64(Payload), secret)</pre>
+
+        <h3>认证流程</h3>
+        <div class="flow">
+            <p><span>1.</span> 客户端 POST /api/auth/login（JSON 发 username + password）</p>
+            <p><span>2.</span> 自定义 <b>LoginController</b> 接收，调 AuthenticationManager 认证</p>
+            <p><span>3.</span> 认证成功 → 用 jjwt 库生成 JWT（HS256 签名，payload 含用户名和权限）</p>
+            <p><span>4.</span> 返回 JSON: <code>{ "accessToken": "eyJ...", "expiresIn": 3600 }</code></p>
+            <p><span>5.</span> 客户端存 token → 后续请求带 Header: <code>Authorization: Bearer eyJ...</code></p>
+            <p><span>6.</span> 服务端 <b>JwtAuthenticationFilter</b>（自定义 OncePerRequestFilter）解析 token → 验签 → 还原
+                Authentication</p>
+            <p><span>7.</span> 设置 <code>SecurityContextHolder</code>，后续 Controller 可直接获取当前用户</p>
+        </div>
+
+        <h3>关键配置</h3>
+        <pre># application.yml
+app:
+  jwt:
+    secret: c2VjdXJpdHktbGFiLWp3dC1zZWNyZXQ...   # HMAC-SHA256 密钥（Base64）
+    access-token-expiration: 3600000              # Token 有效期 1 小时（毫秒）</pre>
+
+        <h3>优点</h3>
+        <p>• <b>无状态</b>：服务端不存任何东西，水平扩展极其简单<br>
+            • 适合前后端分离、移动端 App、微服务间调用<br>
+            • Token 自包含用户信息，不需要额外查询</p>
+
+        <h3>缺点</h3>
+        <p>• Token 签发后无法撤销（除非加黑名单，那就又有状态了）<br>
+            • Token 较大，每次请求都要传<br>
+            • 密钥泄露后果严重（所有人可以伪造 Token）<br>
+            • Token 过期前无法踢人</p>
+    </div>
+
+    <!-- ============================================================ -->
+    <h2>四、Opaque Token 不透明令牌 <span class="tag tag-opaque">opaque-auth</span></h2>
+
+    <div class="card">
+        <h3>原理</h3>
+        <p>
+            Opaque Token（不透明令牌）是一个<b>随机字符串</b>，本身不包含任何用户信息。
+            服务端生成 Token 后存入 Redis（key = token, value = 用户信息）。
+            客户端每次请求带 Token，服务端去 Redis 查对应的用户信息。
+            <b>相当于"自己实现的 Session，但用 Token 代替 Cookie"。</b>
+        </p>
+
+        <h3>与 JWT 的对比</h3>
+        <table>
+            <tr>
+                <th>维度</th>
+                <th>JWT</th>
+                <th>Opaque Token</th>
+            </tr>
+            <tr>
+                <td>Token 内容</td>
+                <td>自包含（含用户信息）</td>
+                <td>随机字符串（无意义）</td>
+            </tr>
+            <tr>
+                <td>服务端存储</td>
+                <td>不需要</td>
+                <td>需要（Redis）</td>
+            </tr>
+            <tr>
+                <td>能否撤销</td>
+                <td>不能（除非加黑名单）</td>
+                <td>能（直接删 Redis key）</td>
+            </tr>
+            <tr>
+                <td>性能</td>
+                <td>只验签名，快</td>
+                <td>需查 Redis</td>
+            </tr>
+            <tr>
+                <td>Token 大小</td>
+                <td>较大（几百字节）</td>
+                <td>小（几十字节）</td>
+            </tr>
+        </table>
+
+        <h3>认证流程</h3>
+        <div class="flow">
+            <p><span>1.</span> 客户端 POST /api/auth/login → 认证成功</p>
+            <p><span>2.</span> 服务端生成随机 Token（UUID），将 <code>token → {username, authorities, expireTime}</code> 存入
+                Redis</p>
+            <p><span>3.</span> 返回 <code>{ "accessToken": "550e8400-e29b-41d4-a716-446655440000" }</code></p>
+            <p><span>4.</span> 客户端后续请求带 <code>Authorization: Bearer 550e8400-...</code></p>
+            <p><span>5.</span> <b>OpaqueTokenFilter</b> 从 Redis 查 token → 还原用户信息 → 设置 SecurityContext</p>
+        </div>
+
+        <h3>关键配置</h3>
+        <pre># application.yml
+app:
+  token:
+    expire-seconds: 7200        # Token 有效期 2 小时
+    redis-prefix: "opaque:token:"   # Redis Key 前缀
+# Redis 中存储结构:
+# opaque:token:550e8400-e29b... → { "username": "user", "authorities": [...], "expireTime": 1712345678 }</pre>
+
+        <h3>优点</h3>
+        <p>• <b>服务端可控</b>：随时删 Redis key 即可撤销 Token<br>
+            • Token 短小，传输开销小<br>
+            • 比 Session 灵活：可以用在移动端、API 等非浏览器场景</p>
+
+        <h3>缺点</h3>
+        <p>• 每次请求都要查 Redis（比 JWT 验签慢）<br>
+            • Redis 故障会导致所有认证失败<br>
+            • 有状态，水平扩展依赖 Redis</p>
+    </div>
+
+    <!-- ============================================================ -->
+    <h2>五、OAuth2 三方认证 <span class="tag tag-oauth2">oauth2-auth</span></h2>
+
+    <div class="card">
+        <h3>原理</h3>
+        <p>
+            OAuth2 不是一种"登录方式"，而是一种<b>授权协议</b>。它允许用户授权第三方应用访问自己在某个平台上的资源。
+            在本项目中，我们同时扮演了 OAuth2 的<b>三个角色</b>：
+        </p>
+
+        <table>
+            <tr>
+                <th>角色</th>
+                <th>模块</th>
+                <th>端口</th>
+                <th>类比</th>
+            </tr>
+            <tr>
+                <td>Authorization Server<br>（授权服务器）</td>
+                <td>auth-server</td>
+                <td>18085</td>
+                <td>相当于 GitHub 的 OAuth 服务</td>
+            </tr>
+            <tr>
+                <td>Resource Server<br>（资源服务器）</td>
+                <td>resource-server</td>
+                <td>18086</td>
+                <td>相当于 GitHub 的 API（/user, /repos）</td>
+            </tr>
+            <tr>
+                <td>Client<br>（客户端 / BFF）</td>
+                <td>client-server</td>
+                <td>18087</td>
+                <td>相当于接入了"用 GitHub 登录"的第三方网站</td>
+            </tr>
+        </table>
+
+        <h3>Authorization Code 授权码流程</h3>
+        <div class="flow">
+            <p><span>1.</span> 用户在前端点击"GitHub 登录" → 浏览器重定向到 GitHub 授权页</p>
+            <p><span>2.</span> 用户在 GitHub 页面授权 → GitHub 生成一个 <b>授权码（code）</b></p>
+            <p><span>3.</span> GitHub 将浏览器重定向回我们的后端：<code>/login/oauth2/code/github?code=xxx</code></p>
+            <p><span>4.</span> 后端拿 <b>授权码 + client-secret</b> 向 GitHub 换 <b>Access Token</b>（服务端对服务端，安全）
+            </p>
+            <p><span>5.</span> 后端用 Access Token 调 GitHub API 获取用户信息（/user）</p>
+            <p><span>6.</span> 后端创建自己的 Session（Cookie: <code>OAUTH2_CLIENT_SESSION</code>），用户登录成功</p>
+        </div>
+
+        <h3>为什么用授权码而不是直接把 Token 给前端？</h3>
+        <p>
+            <b>安全。</b>授权码流程中 Access Token 永远不会到达浏览器，只在服务端持有。
+            浏览器只拿到一个 httpOnly 的 Session Cookie，即使 XSS 攻击也无法窃取 Token。
+            这种模式叫 <b>BFF（Backend For Frontend）</b>。
+        </p>
+
+        <h3>v2 新增：本地账户 + OAuth 绑定</h3>
+        <p>
+            在基础 OAuth2 之上，本项目实现了<b>本地账户为主 + OAuth 三方绑定</b>的模式：
+        </p>
+        <div class="flow">
+            <p><span>•</span> 用户可以用 <b>用户名+密码</b> 直接注册/登录（formLogin）</p>
+            <p><span>•</span> 登录后可以<b>绑定</b> GitHub / Google / Lab 账号</p>
+            <p><span>•</span> 也可以先用 OAuth 登录 → 自动跳转到<b>绑定页</b> → 注册或绑定已有账号</p>
+            <p><span>•</span> 一个本地账号可以绑定多个三方账号（GitHub + Google + Lab）</p>
+            <p><span>•</span> 解绑时保证至少保留一种登录方式</p>
+        </div>
+
+        <h3>三个服务的关键端点</h3>
+        <table>
+            <tr>
+                <th>服务</th>
+                <th>端点</th>
+                <th>说明</th>
+            </tr>
+            <tr>
+                <td>auth-server</td>
+                <td>/oauth2/authorize</td>
+                <td>授权端点，用户确认授权</td>
+            </tr>
+            <tr>
+                <td>auth-server</td>
+                <td>/oauth2/token</td>
+                <td>令牌端点，授权码换 Access Token</td>
+            </tr>
+            <tr>
+                <td>auth-server</td>
+                <td>/oauth2/jwks</td>
+                <td>公钥端点，资源服务器验签用</td>
+            </tr>
+            <tr>
+                <td>auth-server</td>
+                <td>/userinfo</td>
+                <td>OIDC 用户信息端点</td>
+            </tr>
+            <tr>
+                <td>resource-server</td>
+                <td>/api/items</td>
+                <td>受保护资源（需 Bearer Token）</td>
+            </tr>
+            <tr>
+                <td>client-server</td>
+                <td>/api/auth/*</td>
+                <td>本地注册/登录</td>
+            </tr>
+            <tr>
+                <td>client-server</td>
+                <td>/api/bind/*</td>
+                <td>OAuth 绑定/解绑</td>
+            </tr>
+        </table>
+    </div>
+
+    <!-- ============================================================ -->
+    <h2>六、选型指南</h2>
+
+    <table>
+        <tr>
+            <th>场景</th>
+            <th>推荐方案</th>
+        </tr>
+        <tr>
+            <td>传统服务端渲染 Web 应用（JSP/Thymeleaf）</td>
+            <td><span class="tag tag-session">Session</span></td>
+        </tr>
+        <tr>
+            <td>前后端分离 + 移动端 App 的 REST API</td>
+            <td><span class="tag tag-jwt">JWT</span></td>
+        </tr>
+        <tr>
+            <td>需要服务端能随时踢人/撤销 Token 的 API</td>
+            <td><span class="tag tag-opaque">Opaque Token</span></td>
+        </tr>
+        <tr>
+            <td>接入 GitHub/Google/微信等第三方登录</td>
+            <td><span class="tag tag-oauth2">OAuth2 Client</span></td>
+        </tr>
+        <tr>
+            <td>自己作为认证平台，给别人提供"用 XX 登录"</td>
+            <td><span class="tag tag-oauth2">OAuth2 Auth Server</span></td>
+        </tr>
+        <tr>
+            <td>SPA + 高安全性（Token 不到浏览器）</td>
+            <td><span class="tag tag-oauth2">OAuth2 BFF 模式</span></td>
+        </tr>
+    </table>
+
+</div>
+</body>
+</html>

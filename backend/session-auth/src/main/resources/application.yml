@@ -1,0 +1,30 @@
+# ============================================================
+# Session 认证模块 — 通用配置
+# 端口：18082
+# ============================================================
+server:
+  port: 18082
+
+spring:
+  application:
+    name: security-session
+  profiles:
+    active: @spring.profiles.active@
+  session:
+    store-type: redis
+    redis:
+      namespace: spring:session:lab
+    timeout: 30m
+server.servlet.session.cookie.name: JSESSIONID_LAB
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  type-aliases-package: com.lab.securitysession.entity
+
+logging:
+  level:
+    root: INFO
+    com.lab.securitysession: DEBUG
+    org.springframework.security: DEBUG

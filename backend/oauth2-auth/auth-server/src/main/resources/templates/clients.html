@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>OAuth2 客户端管理</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 960px;
+            margin: 32px auto;
+            padding: 0 16px;
+            color: #2c3e50;
+            background: #f5f7fa;
+        }
+        h1 { font-size: 22px; }
+        .subtitle { color: #94a3b8; font-size: 14px; margin-bottom: 24px; }
+        .card {
+            background: #fff;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+        }
+        .card h2 { font-size: 17px; margin: 0 0 16px 0; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #eef2f7; vertical-align: top; word-break: break-all; }
+        th { color: #64748b; font-weight: 600; background: #f8fafc; }
+        .mono { font-family: Consolas, Menlo, monospace; font-size: 12px; }
+        .alert { padding: 10px 14px; border-radius: 8px; font-size: 14px; margin-bottom: 20px; }
+        .alert-error { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+        .alert-success { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 20px; }
+        .form-grid .full { grid-column: 1 / -1; }
+        label { display: block; font-size: 13px; font-weight: 500; color: #475569; margin-bottom: 4px; }
+        input[type="text"], input[type="password"], textarea {
+            width: 100%; padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 8px;
+            font-size: 14px; outline: none;
+        }
+        textarea { min-height: 60px; resize: vertical; font-family: Consolas, Menlo, monospace; font-size: 13px; }
+        .checks { display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 13px; padding-top: 6px; }
+        .checks label { font-weight: 400; margin: 0; }
+        button {
+            margin-top: 18px; padding: 10px 22px; border: none; border-radius: 8px; cursor: pointer;
+            font-size: 14px; font-weight: 500; background: #3498db; color: #fff;
+        }
+        .btn-danger { background: #e74c3c; padding: 4px 12px; margin: 0; font-size: 12px; }
+        .btn-link { display: inline-block; margin: 0 8px 0 0; color: #3498db; text-decoration: none; font-size: 13px; }
+        .btn-link:hover { text-decoration: underline; }
+        .hint { font-size: 12px; color: #94a3b8; margin-top: 4px; }
+        .back { display: inline-block; margin-top: 16px; color: #3498db; font-size: 13px; text-decoration: none; }
+    </style>
+</head>
+<body>
+<h1>OAuth2 客户端管理</h1>
+<p class="subtitle">客户端注册数据保存在数据库（oauth2_registered_client），不再硬编码。新增/编辑客户端后，请确保 client-server 里配置的 client-id / client-secret / redirect-uri 与这里一致。</p>
+
+<div th:if="${message}" class="alert alert-success" th:text="${message}">成功提示</div>
+<div th:if="${error}" class="alert alert-error" th:text="${error}">错误提示</div>
+
+<div class="card">
+    <h2>已注册的客户端</h2>
+    <table th:if="${!clients.isEmpty()}">
+        <thead>
+        <tr>
+            <th>client_id</th>
+            <th>名称</th>
+            <th>授权类型</th>
+            <th>回调地址</th>
+            <th>scope</th>
+            <th>操作</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="c : ${clients}">
+            <td class="mono" th:text="${c.clientId}">lab-client</td>
+            <td th:text="${c.clientName}">客户端</td>
+            <td th:text="${c.authorizationGrantTypes}">authorization_code</td>
+            <td class="mono" th:text="${c.redirectUris}">http://localhost</td>
+            <td th:text="${c.scopes}">openid</td>
+            <td>
+                <a class="btn-link" th:href="@{/api/oauth2-auth/clients/{id}/edit(id=${c.id})}">编辑</a>
+                <form th:action="@{/api/oauth2-auth/clients/{id}/delete(id=${c.id})}" method="post"
+                      style="display:inline;"
+                      th:attr="data-client-id=${c.clientId}">
+                    <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+                    <button type="submit" class="btn-danger">删除</button>
+                </form>
+            </td>
+        </tr>
+        </tbody>
+    </table>
+    <p th:if="${clients.isEmpty()}" style="color:#94a3b8;font-size:13px;">暂无客户端，请在下方向数据库注册第一个客户端。</p>
+</div>
+
+<div class="card">
+    <!-- 同一个表单两种模式：editing 为空 = 注册；editing 非空 = 编辑（action 带 id） -->
+    <h2 th:if="${editing == null}">注册新客户端</h2>
+    <h2 th:if="${editing != null}">编辑客户端：<span class="mono" th:text="${editing.clientId}">lab-client</span></h2>
+
+    <form th:action="${editing != null} ? @{/api/oauth2-auth/clients/{id}(id=${editing.id})} : @{/api/oauth2-auth/clients}" method="post">
+        <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+        <div class="form-grid">
+            <div>
+                <label for="clientName">客户端名称 *</label>
+                <input type="text" id="clientName" name="clientName" placeholder="例如：实验室OAuth2客户端"
+                       th:value="${editing != null ? editing.clientName : ''}" required>
+            </div>
+            <div>
+                <label for="clientId">客户端 ID *（唯一）</label>
+                <input type="text" id="clientId" name="clientId" placeholder="例如：my-client"
+                       th:value="${editing != null ? editing.clientId : ''}" required>
+            </div>
+            <div>
+                <label for="clientSecret"
+                       th:text="${editing == null} ? '客户端密钥 *（明文，保存时 BCrypt 加密）' : '客户端密钥（留空则保持原密钥）'">
+                    客户端密钥
+                </label>
+                <input type="password" id="clientSecret" name="clientSecret"
+                       th:required="${editing == null}"
+                       th:placeholder="${editing == null} ? '例如：secret' : '留空保持原密钥，输入则更新'">
+            </div>
+            <div>
+                <label for="redirectUris">回调地址 *（多个可用换行或逗号分隔）</label>
+                <textarea id="redirectUris" name="redirectUris" required
+                          th:text="${editing != null ? editing.redirectUris : defaultRedirectUri}"></textarea>
+            </div>
+            <div class="full">
+                <label for="scopes">授权范围 *（逗号分隔，如 openid,profile,read）</label>
+                <input type="text" id="scopes" name="scopes" required
+                       th:value="${editing != null ? editing.scopes : 'openid,profile,read'}">
+            </div>
+            <div class="full">
+                <label>授权类型 *</label>
+                <div class="checks">
+                    <label><input type="checkbox" name="grantTypes" value="authorization_code"
+                                  th:checked="${editing == null or (editingGrantTypes != null and editingGrantTypes.contains('authorization_code'))}"> authorization_code</label>
+                    <label><input type="checkbox" name="grantTypes" value="refresh_token"
+                                  th:checked="${editing == null or (editingGrantTypes != null and editingGrantTypes.contains('refresh_token'))}"> refresh_token</label>
+                    <label><input type="checkbox" name="grantTypes" value="client_credentials"
+                                  th:checked="${editing != null and editingGrantTypes != null and editingGrantTypes.contains('client_credentials')}"> client_credentials</label>
+                    <label><input type="checkbox" name="grantTypes" value="urn:ietf:params:oauth:grant-type:device_code"
+                                  th:checked="${editing != null and editingGrantTypes != null and editingGrantTypes.contains('urn:ietf:params:oauth:grant-type:device_code')}"> device_code</label>
+                </div>
+            </div>
+            <div class="full">
+                <label>客户端认证方式 *</label>
+                <div class="checks">
+                    <label><input type="checkbox" name="authMethods" value="client_secret_basic"
+                                  th:checked="${editing == null or (editingAuthMethods != null and editingAuthMethods.contains('client_secret_basic'))}"> client_secret_basic</label>
+                    <label><input type="checkbox" name="authMethods" value="client_secret_post"
+                                  th:checked="${editing == null or (editingAuthMethods != null and editingAuthMethods.contains('client_secret_post'))}"> client_secret_post</label>
+                    <label><input type="checkbox" name="authMethods" value="none"
+                                  th:checked="${editing != null and editingAuthMethods != null and editingAuthMethods.contains('none')}"> none（PKCE 流程用）</label>
+                </div>
+            </div>
+            <div>
+                <label for="accessTokenTtlSeconds">访问令牌有效期（秒）</label>
+                <input type="number" id="accessTokenTtlSeconds" name="accessTokenTtlSeconds" min="60"
+                       th:value="${editing != null ? editing.accessTokenTtlSeconds : 3600}">
+            </div>
+            <div>
+                <label for="refreshTokenTtlSeconds">刷新令牌有效期（秒）</label>
+                <input type="number" id="refreshTokenTtlSeconds" name="refreshTokenTtlSeconds" min="60"
+                       th:value="${editing != null ? editing.refreshTokenTtlSeconds : 604800}">
+            </div>
+            <div class="full">
+                <div class="checks">
+                    <label><input type="checkbox" name="requireAuthorizationConsent"
+                                  th:checked="${editing == null or (editing.requireAuthorizationConsent == true)}"> 需要授权确认（推荐开启）</label>
+                    <label><input type="checkbox" name="requireProofKey"
+                                  th:checked="${editing != null and editing.requireProofKey == true}"> 要求 PKCE（仅适合无服务端的 SPA）</label>
+                    <label><input type="checkbox" name="reuseRefreshTokens"
+                                  th:checked="${editing != null and editing.reuseRefreshTokens == true}"> 刷新令牌复用</label>
+                </div>
+            </div>
+        </div>
+        <button type="submit" th:text="${editing == null} ? '注册客户端' : '保存修改'">注册客户端</button>
+    </form>
+    <a class="back" th:if="${editing != null}" th:href="@{/api/oauth2-auth/clients}">← 取消编辑，返回列表</a>
+</div>
+
+<a class="back" th:href="@{/api/oauth2-auth/login}">← 返回登录页</a>
+<script>
+  // 删除前确认：事件委托读取 form 的 data-client-id，避免在每个删除按钮里内联 JS
+  document.addEventListener('submit', function (e) {
+    var trigger = e.submitter || (e.target.querySelector && e.target.querySelector('button[type="submit"]'));
+    if (!trigger || !trigger.classList.contains('btn-danger')) return;
+    var id = e.target.getAttribute('data-client-id') || '';
+    if (!confirm('确定删除客户端 ' + id + ' 吗？')) {
+      e.preventDefault();
+    }
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,29 @@
+# ============================================================
+# OAuth2 认证服务器 — 生产环境配置
+# ============================================================
+app:
+  oauth2:
+    redirect-uri: @oauth2.base-url@/api/oauth2-client/login/oauth2/code/lab-client
+
+server:
+  forward-headers-strategy: NATIVE
+
+spring:
+  security:
+    oauth2:
+      authorizationserver:
+        issuer: @oauth2.base-url@
+  datasource:
+    url: jdbc:mysql://@mysql.host@:@mysql.port@/security_lab_oauth2?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&createDatabaseIfNotExist=true
+    username: @mysql.username@
+    password: @mysql.password@
+    driver-class-name: @mysql.driver@
+  data:
+    redis:
+      host: @redis.host@
+      port: @redis.port@
+  cloud:
+    nacos:
+      discovery:
+        server-addr: @nacos.host@:@nacos.port@
+        ip: @nacos.ip@

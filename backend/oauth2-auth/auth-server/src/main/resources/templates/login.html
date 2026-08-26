@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>登录 - OAuth2 认证服务器</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 400px;
+            margin: 80px auto;
+            padding: 0 16px;
+            color: #2c3e50;
+            background: #f5f7fa;
+        }
+
+        .card {
+            background: #fff;
+            border-radius: 12px;
+            padding: 32px 28px;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+        }
+
+        h1 {
+            font-size: 22px;
+            margin: 0 0 4px 0;
+            text-align: center;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #94a3b8;
+            font-size: 14px;
+            margin: 0 0 28px 0;
+        }
+
+        .form-group {
+            margin-bottom: 18px;
+        }
+
+        label {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 6px;
+            color: #475569;
+        }
+
+        input[type="text"],
+        input[type="password"] {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            font-size: 15px;
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        input[type="text"]:focus,
+        input[type="password"]:focus {
+            border-color: #3498db;
+            box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.15);
+        }
+
+        button {
+            width: 100%;
+            margin-top: 8px;
+            padding: 11px 18px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            font-size: 15px;
+            font-weight: 500;
+            background: #3498db;
+            color: #fff;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background: #2980b9;
+        }
+
+        .alert {
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-size: 14px;
+            margin-bottom: 20px;
+        }
+
+        .alert-error {
+            background: #fef2f2;
+            color: #b91c1c;
+            border: 1px solid #fecaca;
+        }
+
+        .alert-success {
+            background: #f0fdf4;
+            color: #15803d;
+            border: 1px solid #bbf7d0;
+        }
+
+        .test-hint {
+            margin-top: 24px;
+            padding-top: 18px;
+            border-top: 1px solid #e2e8f0;
+            font-size: 13px;
+            color: #94a3b8;
+            text-align: center;
+        }
+
+        .test-hint code {
+            font-size: 13px;
+            background: #f1f5f9;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+<div class="card">
+    <h1>🔐 登录</h1>
+    <p class="subtitle">OAuth2 认证服务</p>
+
+    <div th:if="${error}" class="alert alert-error" th:text="${error}">
+        用户名或密码错误
+    </div>
+    <div th:if="${message}" class="alert alert-success" th:text="${message}">
+        您已成功退出登录
+    </div>
+
+    <form th:action="@{/api/oauth2-auth/login}" method="post">
+        <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+
+        <div class="form-group">
+            <label for="username">用户名</label>
+            <input type="text" id="username" name="username" placeholder="请输入用户名" autofocus required>
+        </div>
+
+        <div class="form-group">
+            <label for="password">密码</label>
+            <input type="password" id="password" name="password" placeholder="请输入密码" required>
+        </div>
+
+        <button type="submit">登 录</button>
+    </form>
+
+        <div class="test-hint">
+        测试账号：<code>admin</code> / <code>123456</code>
+        <div style="margin-top:10px;">
+            <a href="/api/oauth2-auth/clients" style="color:#3498db;text-decoration:none;">⚙️ 客户端管理（管理员登录后可用）</a>
+        </div>
+    </div>
+</div>
+</body>
+</html>

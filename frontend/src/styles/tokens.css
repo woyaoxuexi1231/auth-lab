@@ -1,0 +1,88 @@
+/* ============================================================
+   Study Hub — 设计 Token
+   方向：安静书桌 — 好读、好找，不抢注意力
+   ============================================================ */
+
+:root {
+  --color-bg: #f4f5f7;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f0f1f4;
+
+  --color-text: #1c1c1e;
+  --color-text-secondary: #4b5563;
+  --color-text-muted: #8b929c;
+
+  --color-border: #d8dde5;
+  --color-border-weak: #e8ebf0;
+
+  /* 行动 / 当前页：沉稳蓝，字白 */
+  --color-accent: #2f6fed;
+  --color-accent-hover: #2459c9;
+  --color-accent-bg: #eaf1fe;
+  --color-accent-ink: #ffffff;
+
+  --color-link: #2f6fed;
+  --color-link-hover: #2459c9;
+
+  --color-success: #1a7f4b;
+  --color-success-bg: #e8f7ef;
+  --color-error: #c0392b;
+  --color-error-bg: #fceeed;
+  --color-warning: #9a6b16;
+  --color-warning-bg: #fbf3e0;
+  --color-info: #2f6fed;
+  --color-info-bg: #eaf1fe;
+
+  --color-code-bg: #f0f2f5;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 48px;
+
+  --font-xs: 12px;
+  --font-sm: 13px;
+  --font-base: 15px;
+  --font-md: 16px;
+  --font-lg: 20px;
+  --font-xl: 24px;
+  --font-2xl: 28px;
+  --font-3xl: 36px;
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  --tracking-heading: -0.01em;
+  --tracking-display: -0.02em;
+  --tracking-body: 0;
+  --tracking-label: 0;
+  --tracking-stamp: 0;
+
+  --radius-sm: 6px;
+  --radius: 8px;
+  --radius-md: 10px;
+
+  --border: 1px solid var(--color-border);
+  --border-weak: 1px solid var(--color-border-weak);
+  --border-hair: 1px solid var(--color-border-weak);
+
+  --shadow-sm: 0 1px 2px rgba(28, 28, 30, 0.04);
+  --shadow-md: 0 4px 12px rgba(28, 28, 30, 0.06);
+
+  --focus-ring: 0 0 0 3px rgba(47, 111, 237, 0.25);
+
+  --container: 1080px;
+  --container-narrow: 680px;
+  --nav-height: 56px;
+
+  --font-family: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei',
+    'Noto Sans SC', system-ui, sans-serif;
+  --font-display: var(--font-family);
+  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}

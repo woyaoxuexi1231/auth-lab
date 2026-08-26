@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>授权确认</title>
+    <style>
+        body {
+            font-family: system-ui, sans-serif;
+            max-width: 480px;
+            margin: 48px auto;
+            padding: 0 16px;
+            color: #2c3e50;
+        }
+
+        h1 {
+            font-size: 22px;
+            margin-bottom: 8px;
+        }
+
+        p {
+            color: #666;
+            line-height: 1.5;
+        }
+
+        ul {
+            padding-left: 20px;
+        }
+
+        button {
+            margin-top: 24px;
+            padding: 10px 18px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            background: #3498db;
+            color: #fff;
+        }
+    </style>
+</head>
+<body>
+<h1>授权确认</h1>
+<p>
+    应用 <strong th:text="${clientName}">Client</strong>
+    请求以 <strong th:text="${principalName}">user</strong> 的身份访问以下权限：
+</p>
+
+<form th:action="@{/api/oauth2-auth/authorize}" method="post">
+    <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+    <input type="hidden" name="client_id" th:value="${clientId}">
+    <input type="hidden" name="state" th:value="${state}">
+
+    <ul>
+        <li th:each="s : ${scopes}">
+            <label>
+                <input type="checkbox" name="scope" th:value="${s}" checked>
+                <span th:text="${s}">scope</span>
+            </label>
+        </li>
+        <li th:each="s : ${previouslyApprovedScopes}">
+            <input type="checkbox" name="scope" th:value="${s}" checked disabled>
+            <span th:text="${s}">scope</span>（已授权）
+        </li>
+    </ul>
+
+    <button type="submit">同意授权</button>
+</form>
+</body>
+</html>

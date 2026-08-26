@@ -1,0 +1,17 @@
+# ============================================================
+# OAuth2 资源服务器 — 公共配置
+# ============================================================
+server:
+  port: 18086
+
+spring:
+  application:
+    name: security-oauth2-resource-server
+  profiles:
+    active: @spring.profiles.active@
+
+logging:
+  level:
+    root: INFO
+    com.lab.securityoauth2resourceserver: DEBUG
+    org.springframework.security: DEBUG

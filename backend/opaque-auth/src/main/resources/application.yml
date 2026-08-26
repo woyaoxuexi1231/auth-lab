@@ -1,0 +1,32 @@
+# ============================================================
+# Opaque Token 认证模块 — 通用配置
+# 端口：18088
+# ============================================================
+server:
+  port: 18088
+
+spring:
+  application:
+    name: security-opaque-token
+  profiles:
+    active: @spring.profiles.active@
+
+# Opaque Token 配置
+app:
+  token:
+    # Token 有效期（秒）：2 小时 = 7200 秒
+    expire-seconds: 7200
+    # Redis Key 前缀
+    redis-prefix: "opaque:token:"
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  type-aliases-package: com.lab.securityopaquetoken.entity
+
+logging:
+  level:
+    root: INFO
+    com.lab.securityopaquetoken: DEBUG
+    org.springframework.security: DEBUG

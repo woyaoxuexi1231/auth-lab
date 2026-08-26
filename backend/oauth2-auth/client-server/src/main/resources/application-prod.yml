@@ -1,0 +1,66 @@
+# ============================================================
+# OAuth2 客户端 — 生产环境配置
+# ============================================================
+app:
+  frontend-base-url: http://localhost:13000
+
+server:
+  forward-headers-strategy: NATIVE
+
+spring:
+  cloud:
+    nacos:
+      discovery:
+        server-addr: @nacos.host@:@nacos.port@
+        ip: @nacos.ip@
+  datasource:
+    url: jdbc:mysql://@mysql.host@:@mysql.port@/security_lab_oauth2_client?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&createDatabaseIfNotExist=true
+    username: @mysql.username@
+    password: @mysql.password@
+    driver-class-name: @mysql.driver@
+  security:
+    oauth2:
+      client:
+        registration:
+          lab-client:
+            client-id: lab-client
+            client-secret: secret
+            scope:
+              - openid
+              - profile
+              - read
+            redirect-uri: "@oauth2.base-url@/api/oauth2-client/login/oauth2/code/lab-client"
+            authorization-grant-type: authorization_code
+            client-name: Lab Auth Server
+            provider: lab-auth-server
+          github:
+            client-id: ${GITHUB_CLIENT_ID:x}
+            client-secret: ${GITHUB_CLIENT_SECRET:x}
+            scope:
+              - read:user
+              - user:email
+            redirect-uri: "@oauth2.base-url@/api/oauth2-client/login/oauth2/code/github"
+            authorization-grant-type: authorization_code
+            client-name: GitHub
+          google:
+            client-id: ${GOOGLE_CLIENT_ID:x}
+            client-secret: ${GOOGLE_CLIENT_SECRET:x}
+            scope:
+              - openid
+              - profile
+              - email
+            redirect-uri: "@oauth2.base-url@/api/oauth2-client/login/oauth2/code/google"
+            authorization-grant-type: authorization_code
+            client-name: Google
+        provider:
+          lab-auth-server:
+            authorization-uri: @oauth2.base-url@/api/oauth2-auth/authorize
+            token-uri: @oauth2.base-url@/api/oauth2-auth/token
+            jwk-set-uri: @oauth2.base-url@/api/oauth2-auth/jwks
+            user-info-uri: @oauth2.base-url@/api/oauth2-auth/userinfo
+            user-name-attribute: sub
+
+demo:
+  resource-server:
+    list-uri: @oauth2.base-url@/api/oauth2-resource/items
+
