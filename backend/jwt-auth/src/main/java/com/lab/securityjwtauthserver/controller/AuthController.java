@@ -46,7 +46,7 @@ public class AuthController {
     private final AuthenticationManager authenticationManager; // 认证管理器：验证用户名密码
     private final JwtUtil jwtUtil;                             // JWT 工具：生成 Token
 
-    /** Access Token 有效期（毫秒）— 来自 application.yml，避免在代码中硬编码 */
+    /** Access Token 有效期（毫秒）— 来自 application.yml，避免在代码中硬编码；响应中会换算成秒 */
     @Value("${app.jwt.access-token-expiration}")
     private long accessTokenExpirationMs;
 
@@ -106,10 +106,11 @@ public class AuthController {
         String token = jwtUtil.generateAccessToken(userDetails);
 
         // ⑤ 封装响应（有效期来自 application.yml 的 app.jwt.access-token-expiration，避免硬编码）
+        //    配置值是毫秒，对外按 RFC 6749 惯例换算成"秒"——客户端普遍按秒解释 expiresIn
         TokenResponse tokenResponse = TokenResponse.builder()
                 .token(token)
                 .tokenType("Bearer")
-                .expiresIn(accessTokenExpirationMs)
+                .expiresIn(accessTokenExpirationMs / 1000)
                 .build();
 
         log.info("登录成功，JWT 已签发: {}", loginRequest.getUsername());
@@ -137,7 +138,7 @@ public class AuthController {
 
         Map<String, Object> profile = new HashMap<>();
         profile.put("username", userDetails.getUsername());
-        profile.put("authorities", userDetails.getAuthorities());  // 权限来自 JWT 内嵌 claims（登录时写入）
+        profile.put("authorities", userDetails.getAuthorities());  // 权限以数据库为准（JwtAuthenticationFilter 步骤⑨）
 
         log.info("用户 {} 查询个人信息", userDetails.getUsername());
         return ResponseEntity.ok(profile);

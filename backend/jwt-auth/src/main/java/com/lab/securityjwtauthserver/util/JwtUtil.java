@@ -1,7 +1,6 @@
 package com.lab.securityjwtauthserver.util;
 
 import io.jsonwebtoken.Claims;
-import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
@@ -33,8 +32,22 @@ import java.util.stream.Collectors;
  * <ul>
  *   <li>Payload 是 Base64 编码（非加密），任何人都能解码 — 不要放敏感信息</li>
  *   <li>Signature 保证完整性 — 篡改 Payload 会导致签名不匹配</li>
+ *   <li>验签时同时强制校验 iss / aud — 挡住"同一密钥签发给别人"的 Token</li>
  *   <li>Token 签发后无法主动撤销（除非引入黑名单） — Opaque Token 模块解决了这个问题</li>
  * </ul>
+ *
+ * <p>关于"哪些声明必填"（常见误解澄清，详见 docs/auth-principles/JWT认证原理.md 的 2.1）：
+ * <ul>
+ *   <li>RFC 7519 §4.1 注册的声明<b>没有一个是强制的</b>（原文：None of the claims defined below
+ *       are intended to be mandatory…）。本类之所以有 {@code subject()} / {@code expiration()}
+ *       这类类型化方法，是因为这些<b>名字、类型、语义被注册</b>了，不是因为它们必须出现。</li>
+ *   <li>"必填"只有两个来源：① 校验端 {@code require} 了什么 —— 见 {@link #parseToken(String)}
+ *       中的 {@code requireIssuer} / {@code requireAudience}；② 所遵循的 profile
+ *       （OIDC 身份令牌要求 iss/sub/aud/exp/iat，RFC 9068 访问令牌要求 iss/exp/aud/sub/client_id/iat/jti）。</li>
+ *   <li>本项目把 sub / iss / aud / exp 全部填满，是<b>主动选择</b>（原因见
+ *       {@link #generateAccessToken(UserDetails)} 的逐行注释），不是规范要求。</li>
+ * </ul>
+ * 一句话：<b>规范规定字段"怎么写"，校验端规定哪些"必须写"；require 了的才真的必填。</b></p>
  *
  * <p>本模块采用单 Token 方案（无 Refresh Token），保持职责单一：演示 JWT 格式本身。</p>
  */
@@ -42,12 +55,29 @@ import java.util.stream.Collectors;
 @Component  // Spring 组件 — 可被注入到 Filter 和 Controller
 public class JwtUtil {
 
-    // === 从 application.yml 注入配置 ===
-    @Value("${app.jwt.secret}")
-    private String secret;                              // HMAC-SHA256 签名密钥（Base64 编码）
+    // === 构造期注入即固化（final），运行期不再变化 ===
+    private final SecretKey signingKey;         // HMAC-SHA256 签名 / 验签密钥
+    private final String issuer;                // iss：签发者标识（签发时写入，验签时强制校验）
+    private final String audience;              // aud：受众标识（同上）
+    private final long accessTokenExpiration;   // Token 有效期（毫秒）
 
-    @Value("${app.jwt.access-token-expiration}")
-    private long accessTokenExpiration;                 // Token 有效期（毫秒），默认 3600000 = 1 小时
+    /**
+     * 构造期完成配置读取与密钥构建。
+     *
+     * <p>把 Base64 解码 + 密钥构建放在构造期而不是首次使用时：
+     * 密钥格式错误或长度不足 256 位会直接导致<b>应用启动失败</b>（fail fast），
+     * 而不是等第一个请求才抛 {@code WeakKeyException}；
+     * 同时密钥成为 final 字段，免去了运行期懒加载的并发处理（原本用 volatile + 双重检查）。</p>
+     */
+    public JwtUtil(@Value("${app.jwt.secret}") String secret,
+                   @Value("${app.jwt.issuer}") String issuer,
+                   @Value("${app.jwt.audience}") String audience,
+                   @Value("${app.jwt.access-token-expiration}") long accessTokenExpiration) {
+        this.signingKey = Keys.hmacShaKeyFor(Decoders.BASE64.decode(secret));
+        this.issuer = issuer;
+        this.audience = audience;
+        this.accessTokenExpiration = accessTokenExpiration;
+    }
 
     // ================================================================
     // Token 生成
@@ -56,14 +86,15 @@ public class JwtUtil {
     /**
      * 生成访问令牌（Access Token）。
      *
-     * <p>使用 JJWT Builder 链式构建，包含标准声明（sub, iat, exp, jti, iss, aud）
-     * 和自定义声明（authorities）。</p>
+     * <p>使用 JJWT Builder 链式构建，包含标准声明（sub, iss, aud, iat, exp, jti）
+     * 和自定义声明（authorities）。每个声明的"必填 / 建议"标注及原因见方法内逐行注释。</p>
      *
      * @param userDetails 认证成功后的用户信息（含用户名和权限）
      * @return 完整的 JWT 字符串（Header.Payload.Signature）
      */
     public String generateAccessToken(UserDetails userDetails) {
-        // ① 提取权限列表 → 写入 JWT，后续过滤器可直接读取，不需要再查 DB
+        // ① 提取权限列表 → 写入 JWT
+        //    注意：这只是"签发时刻的快照"，过滤器恢复认证时以数据库权限为准
         List<String> authorities = userDetails.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority)    // 取出权限字符串
                 .collect(Collectors.toList());          // 收集为 List
@@ -71,35 +102,69 @@ public class JwtUtil {
         long now = System.currentTimeMillis();          // ② 当前时间戳（毫秒）
 
         // ③ JJWT Builder 流式构建
+        //    ── 声明必填判据（详见类注释）──
+        //    规范（RFC 7519）一个都不强制；"必填"只来自两处：
+        //      a) 校验端的 require —— 见 parseToken() 的 requireIssuer / requireAudience
+        //      b) 你遵循的 profile —— OIDC / RFC 9068
+        //    下面这几条是本项目按"安全 + 运维"需要主动填满的：
+        //      缺 exp → 永不过期的凭据（永久后门）    缺 iss/aud → 无法判断"谁签给谁"
+        //      （A 系统签的 Token 能拿去打 B 系统）   缺 sub → 校验端不知道"这是谁"
         String token = Jwts.builder()
-                .subject(userDetails.getUsername())     // sub：用户标识（核心声明）
-                .claim("authorities", authorities)      // 自定义声明：权限列表
-                .claim("aud", "security-lab")           // aud：受众
-                .issuer("security-jwt-auth-server")     // iss：签发者
-                .issuedAt(new Date(now))                // iat：签发时间
-                .expiration(new Date(now + accessTokenExpiration)) // exp：过期时间
-                .id(UUID.randomUUID().toString())       // jti：JWT 唯一 ID（防重放）
-                .signWith(getSigningKey())              // ④ HMAC-SHA256 签名
+                .subject(userDetails.getUsername())     // sub 必填：主体（这是谁）
+                .claim("authorities", authorities)      // 自定义：权限快照（签发时刻；过滤器以 DB 为准）
+                .audience().add(audience).and()         // aud 必填：受众（签给谁；验签端 requireAudience 强制比对）
+                .issuer(issuer)                         // iss 必填：签发者（验签端 requireIssuer 强制比对）
+                .issuedAt(new Date(now))                // iat 建议：签发时间（排查问题 / 算凭据年龄）
+                .expiration(new Date(now + accessTokenExpiration)) // exp 必填：过期时间；JJWT 解析时自动校验
+                .id(UUID.randomUUID().toString())       // jti 建议：唯一 ID — 日志追踪 / 将来接黑名单；
+                                                        //   注意它本身并不防重放，防重放要服务端存已用 jti（本模块未做）
+                .signWith(signingKey, Jwts.SIG.HS256)   // ④ 显式指定 HS256，签名算法不由 Token 自述决定
                 .compact();                             // ⑤ 序列化为最终的 JWT 字符串
 
         return token;
     }
 
     // ================================================================
-    // Token 解析
+    // Token 解析 / 验证
     // ================================================================
 
     /**
-     * 从 JWT 的 sub（Subject）声明中提取用户名。
+     * 解析 JWT 并返回 Claims。
      *
-     * <p>parseToken() 内部会验证签名 — 如果签名不匹配，JJWT 抛异常。</p>
+     * <p>这是 JWT 验证的核心方法。JJWT 在解析时自动执行：
+     * <ol>
+     *   <li>签名验证 — 用配置的密钥验证 HMAC-SHA256 签名</li>
+     *   <li>过期验证 — 检查 exp 声明（过期抛 ExpiredJwtException）</li>
+     *   <li>格式验证 — 检查是否为合法 JWT 格式（三段式）</li>
+     *   <li>声明校验 — iss / aud 必须与本服务配置一致（requireIssuer / requireAudience）</li>
+     * </ol>
+     *
+     * <p>可能抛出的异常（调用方统一按"Token 无效"处理）：
+     * <ul>
+     *   <li>SignatureException — 签名无效（密钥不匹配或被篡改）</li>
+     *   <li>ExpiredJwtException — Token 已过期</li>
+     *   <li>MalformedJwtException — 格式错误</li>
+     *   <li>IncorrectClaimException — iss / aud 不匹配</li>
+     * </ul>
      */
-    public String extractUsername(String token) {
-        return parseToken(token).getSubject();          // getSubject() = 读取 sub 字段
+    public Claims parseToken(String token) {
+        // ★ requireIssuer / requireAudience 就是"把 iss / aud 变成必填"的开关：
+        //   Token 里缺这两个声明 → MissingClaimException；值不匹配 → IncorrectClaimException。
+        //   即"哪些声明必填"是校验端在【这里】决定的，而不是签发端决定的（见类注释）。
+        return Jwts.parser()
+                .verifyWith(signingKey)                 // ① 设置签名验证密钥
+                .requireIssuer(issuer)                  // ② iss 必填且必须匹配：挡住其他系统用同一密钥签发的 Token
+                .requireAudience(audience)              // ③ aud 必填且必须匹配：挡住签发给其他受众的 Token
+                .build()                                // ④ 构建解析器
+                .parseSignedClaims(token)               // ⑤ 解析 + 验证签名 + 检查过期 + 校验 iss/aud
+                .getPayload();                          // ⑥ 返回 Payload（Claims）
     }
 
     /**
-     * 从已解析的 Claims 提取权限（避免重复验签；过滤器中应复用一次解析结果）。
+     * 从已解析的 Claims 提取权限（避免重复验签；调用方应复用一次解析结果）。
+     *
+     * <p>返回的是 Token 内嵌的<b>权限快照</b>。当前过滤器以数据库权限为准，
+     * 仅在 DEBUG 日志里用它与 DB 权限比对，用于观察"快照会过期"这一现象。</p>
      *
      * @return GrantedAuthority 列表（用于构建 Authentication）
      */
@@ -115,107 +180,5 @@ public class JwtUtil {
                 .map(Object::toString)
                 .map(SimpleGrantedAuthority::new)       // Spring Security 的权限实现
                 .collect(Collectors.toList());
-    }
-
-    /**
-     * 从 JWT 的自定义声明中提取权限列表。
-     *
-     * <p>在 JwtAuthenticationFilter 中，验证 JWT 通过后需要重建 Authentication 对象。
-     * Authentication 需要包含权限信息，这些信息在 Token 生成时已写入。</p>
-     *
-     * @return GrantedAuthority 列表（用于构建 Authentication）
-     */
-    public List<GrantedAuthority> extractAuthorities(String token) {
-        return extractAuthorities(parseToken(token));   // 原逻辑委托：解析一次后复用 Claims 提取
-    }
-
-    // ================================================================
-    // Token 验证
-    // ================================================================
-
-    /**
-     * 验证 JWT 是否有效。
-     *
-     * <p>两个条件必须同时满足：
-     * <ol>
-     *   <li>JWT 中的用户名与 UserDetails 一致（防止 Token 伪造）</li>
-     *   <li>JWT 未过期</li>
-     * </ol>
-     * 签名验证已在 parseToken() 中自动完成。</p>
-     */
-    public boolean isTokenValid(String token, UserDetails userDetails) {
-        String username = extractUsername(token);       // 从 JWT 取用户名
-        boolean usernameMatch = username.equals(userDetails.getUsername()); // 比对
-        boolean notExpired = !isTokenExpired(token);    // 检查过期
-
-        return usernameMatch && notExpired;             // 两个条件都满足才有效
-    }
-
-    /**
-     * 检查 JWT 是否过期。
-     *
-     * <p>JJWT 在解析时会自动检查 exp 声明 — 过期时抛 ExpiredJwtException，
-     * 我们捕获异常来判断过期状态。同时做一次显式的过期时间比对作为双重检查。</p>
-     */
-    public boolean isTokenExpired(String token) {
-        try {
-            Claims claims = parseToken(token);          // 尝试解析
-            // 双重检查：显式比对过期时间和当前时间
-            return claims.getExpiration().before(new Date());
-        } catch (ExpiredJwtException e) {
-            return true;                                // 捕获过期异常 → 确认已过期
-        }
-    }
-
-    /**
-     * 解析 JWT 并返回 Claims。
-     *
-     * <p>这是 JWT 验证的核心方法。JJWT 在解析时自动执行：
-     * <ol>
-     *   <li>签名验证 — 使用配置的密钥验证 HMAC-SHA256 签名</li>
-     *   <li>过期验证 — 检查 exp 声明</li>
-     *   <li>格式验证 — 检查是否为合法 JWT 格式（三段式）</li>
-     * </ol>
-     *
-     * <p>可能抛出的异常：
-     * <ul>
-     *   <li>SignatureException — 签名无效（密钥不匹配或被篡改）</li>
-     *   <li>ExpiredJwtException — Token 已过期</li>
-     *   <li>MalformedJwtException — 格式错误</li>
-     * </ul>
-     */
-    public Claims parseToken(String token) {
-        return Jwts.parser()
-                .verifyWith(getSigningKey())            // ① 设置签名验证密钥
-                .build()                                // ② 构建解析器
-                .parseSignedClaims(token)               // ③ 解析 + 验证签名 + 检查过期
-                .getPayload();                          // ④ 返回 Payload（Claims）
-    }
-
-    // ================================================================
-    // 辅助方法
-    // ================================================================
-
-    private volatile SecretKey signingKey;   // 缓存密钥对象，避免每次解析都 Base64 解码重建
-
-    /**
-     * 将 Base64 编码的密钥字符串转为 HMAC-SHA256 密钥对象。
-     *
-     * <p>密钥要求至少 256 位（32 字节），否则 JJWT 抛出 WeakKeyException。
-     * Base64 编码使二进制密钥能以纯文本存储在配置文件中。
-     * 结果缓存（volatile + 双重检查）— 每个请求多次解析 JWT 时不必反复 Base64 解码重建。</p>
-     */
-    private SecretKey getSigningKey() {
-        SecretKey key = this.signingKey;
-        if (key == null) {
-            synchronized (this) {
-                if (this.signingKey == null) {
-                    byte[] keyBytes = Decoders.BASE64.decode(secret); // Base64 解码 → 字节数组
-                    this.signingKey = Keys.hmacShaKeyFor(keyBytes);   // 创建 HMAC-SHA256 密钥
-                }
-                key = this.signingKey;
-            }
-        }
-        return key;
     }
 }

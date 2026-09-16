@@ -19,10 +19,15 @@ mybatis-plus:
 
 app:
   jwt:
-    # 签名密钥（Base64 编码，至少 256 位）。
+    # 签名密钥（Base64 编码，至少 256 位 = HS256 的密钥下限，不足则启动即失败）。
     # 默认值为演示用途的 Base64 字符串，可零配置运行；生产环境必须用环境变量 APP_JWT_SECRET 覆盖
     secret: ${APP_JWT_SECRET:c2VjdXJlLXNlY3JldC1mb3Itand0LWF1dGgtc2VydmVyLTIwMjQtYmxhYmxh}
+    # Token 有效期（毫秒）；接口响应中的 expiresIn 会按秒返回（RFC 6749 惯例）
     access-token-expiration: 3600000
+    # iss / aud 声明：签发时写入，验签时强制校验（requireIssuer / requireAudience），
+    # 防止其他系统用同一密钥签发的、或签发给其他受众的 Token 被接受
+    issuer: security-jwt-auth-server
+    audience: security-lab
 
 logging:
   level:

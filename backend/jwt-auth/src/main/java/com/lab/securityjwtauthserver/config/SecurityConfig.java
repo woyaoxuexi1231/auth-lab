@@ -1,6 +1,7 @@
 package com.lab.securityjwtauthserver.config;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -33,15 +34,17 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
  *                       → UserDetailsServiceImpl → PasswordEncoder.matches()
  * 组装 Claims + 签名   → JwtUtil.generateAccessToken()（jjwt，密钥 app.jwt.secret，有效期 app.jwt.access-token-expiration）
  * 拦截请求、提取 Token  → JwtAuthenticationFilter（下方 ④ addFilterBefore 挂入过滤器链）
- * 本地验签 + 检查过期    → JwtUtil.parseToken()（jjwt 自动验签 / 验期 / 验格式，异常即无效）
+ * 本地验签 + 检查过期    → JwtUtil.parseToken()（jjwt 自动验签 / 验期 / 校验 iss、aud，异常即无效）
  * 恢复身份给业务代码     → JwtAuthenticationFilter 构建 3 参数 UsernamePasswordAuthenticationToken
  *                         → SecurityContextHolder.setAuthentication()
+ * 账号状态 / 权限时效    → JwtAuthenticationFilter 回查 UserDetailsService（复查 isEnabled 等标志，权限以 DB 为准）
  * 拒绝未认证请求        → AuthorizationFilter（下方 ① authorizeHttpRequests 规则，SecurityContext 为空 → 401）
  * </pre>
  *
  * <p>三个关键策略（对应机制第 3 章的"无状态"）：
  * <ul>
- *   <li>STATELESS（③）— 不创建 HttpSession，认证状态只活在单个请求的 SecurityContext 中，请求结束即消失</li>
+ *   <li>STATELESS（③）— 不创建 HttpSession，认证状态只活在单个请求的 SecurityContext 中，请求结束即消失。
+ *       （过滤器每请求回查一次 DB 取账号状态与权限，属于"读权威数据源"，服务端仍不保存任何会话状态）</li>
  *   <li>addFilterBefore（④）— 自定义过滤器插在表单登录过滤器之前：JWT 接管"谁已登录"，
  *       传统表单登录在本模块没有用武之地（登录走 AuthController 自定义接口）</li>
  *   <li>禁用 CSRF（②）— JWT 由 JS 手动放入 Authorization 头，浏览器不会自动携带，无 CSRF 攻击面</li>
@@ -52,7 +55,11 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @RequiredArgsConstructor      // Lombok：为所有 final 字段生成构造函数（构造注入）
 public class SecurityConfig {
 
-    // JWT 认证过滤器 — 不能声明为 @Bean，否则 Spring Boot 会自动注册到全局过滤器链
+    // JWT 认证过滤器 — 只交给下面的 SecurityFilterChain 使用。
+    // 注意：它是 @Component，而 Spring Boot 会把容器里任何 Filter Bean 自动注册进
+    // Servlet 容器过滤器链，所以必须再用 filterRegistration() 显式禁用那次注册，
+    // 否则同一次请求会先后经过"安全链内"和"容器链上"两条路径（现在靠
+    // OncePerRequestFilter 的 request attribute 去重才没出问题，属于隐性依赖）
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
 
     // ================================================================
@@ -166,5 +173,28 @@ public class SecurityConfig {
     public AuthenticationManager authenticationManager(
             AuthenticationConfiguration authenticationConfiguration) throws Exception {
         return authenticationConfiguration.getAuthenticationManager();
+    }
+
+    // ================================================================
+    // 阻止 JwtAuthenticationFilter 被 Servlet 容器重复注册
+    // ================================================================
+
+    /**
+     * 关闭 {@link JwtAuthenticationFilter} 的自动注册。
+     *
+     * <p>背景：Spring Boot 会把容器里所有 {@code Filter} 类型的 Bean 注册到 Servlet 容器
+     * 过滤器链。而 {@code JwtAuthenticationFilter} 是 {@code @Component}（为了能被注入），
+     * 于是它既在 {@code SecurityFilterChain} 里（真正生效的位置），又被容器链注册了一次。</p>
+     *
+     * <p>当前不出问题只是因为 {@code OncePerRequestFilter} 用 request attribute 去重，
+     * 这种"隐性依赖"不该留：过滤器一旦改成实现 {@code Filter} 而非继承
+     * {@code OncePerRequestFilter}，认证逻辑就会每请求执行两遍。</p>
+     */
+    @Bean
+    public FilterRegistrationBean<JwtAuthenticationFilter> jwtAuthenticationFilterRegistration(
+            JwtAuthenticationFilter filter) {
+        FilterRegistrationBean<JwtAuthenticationFilter> registration = new FilterRegistrationBean<>(filter);
+        registration.setEnabled(false); // 只保留 SecurityFilterChain 这一条注册路径
+        return registration;
     }
 }

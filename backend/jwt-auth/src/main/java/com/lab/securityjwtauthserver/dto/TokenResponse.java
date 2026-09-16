@@ -16,9 +16,11 @@ import lombok.NoArgsConstructor;
  * {
  *   "token": "eyJhbGciOiJIUzI1NiJ9...",
  *   "tokenType": "Bearer",
- *   "expiresIn": 3600000
+ *   "expiresIn": 3600
  * }
  * }</pre>
+ *
+ * <p>{@code expiresIn} 单位是<b>秒</b>（RFC 6749 约定，避免客户端按秒解释时算错 1000 倍）。</p>
  *
  * <p>客户端使用方式：
  * <pre>{@code
@@ -34,5 +36,5 @@ import lombok.NoArgsConstructor;
 public class TokenResponse {
     private String token;       // JWT 字符串（Header.Payload.Signature）
     private String tokenType;   // 固定 "Bearer" — 请求头格式：Authorization: Bearer <token>
-    private Long expiresIn;     // 过期时间（毫秒），3600000 = 1 小时
+    private Long expiresIn;     // 有效期（秒），3600 = 1 小时
 }
