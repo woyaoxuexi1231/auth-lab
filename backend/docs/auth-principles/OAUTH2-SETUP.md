@@ -38,17 +38,17 @@
 ### 2. 配置 application.yml
 回调 URL = `oauth2.base-url` + `/api/oauth2-client/login/oauth2/code/{provider}`
 
-- `oauth2.base-url` 是 Maven 打包时注入的占位符，定义在 `backend/java/pom.xml`，
-  本地开发默认 **`http://localhost:18090`**（多环境取值见
+- `oauth2.base-url` 是 Maven 打包时注入的占位符，定义在 `backend/pom.xml`，
+  本地开发默认 **`http://localhost:13008`**（前端 vite 源地址；多环境取值见
   [OAuth2认证流程与多环境部署指南](../OAuth2认证流程与多环境部署指南.md)）
 - 路径里的 `/api/oauth2-client` 前缀来自 client-server 的
   `loginProcessingUrl("/api/oauth2-client/login/oauth2/code/*")` 配置
 
 | provider | 回调 URL（本地开发环境）                                              |
 |----------|----------------------------------------------------------------|
-| github   | `http://localhost:18090/api/oauth2-client/login/oauth2/code/github` |
-| google   | `http://localhost:18090/api/oauth2-client/login/oauth2/code/google` |
-| lab-client | `http://localhost:18090/api/oauth2-client/login/oauth2/code/lab-client` |
+| github   | `http://localhost:13008/api/oauth2-client/login/oauth2/code/github` |
+| google   | `http://localhost:13008/api/oauth2-client/login/oauth2/code/google` |
+| lab-client | `http://localhost:13008/api/oauth2-client/login/oauth2/code/lab-client` |
 
 > ⚠ 平台登记的 URL 必须与本项目 `redirect-uri` **完全一致**（协议、主机、
 > 端口、路径一个字符都不能差）。`localhost` 和 `127.0.0.1` 视为不同地址。
@@ -174,8 +174,8 @@ $env:GOOGLE_CLIENT_SECRET="xxxx"
 | 字段                        | 本项目填什么                                                       | 说明                                  |
 |---------------------------|---------------------------------------------------------------|-------------------------------------|
 | Application name          | `OAuth2 Lab Client`（任意）                                     | 展示给用户的名字                          |
-| Homepage URL              | `http://localhost:13000`                                       | 前端地址（`app.frontend-base-url`）       |
-| Authorization callback URL | `http://localhost:18090/api/oauth2-client/login/oauth2/code/github` | ★ 必须与 0.2 的回调 URL 完全一致 |
+| Homepage URL              | `http://localhost:13008`                                       | 前端地址（`app.frontend-base-url`）       |
+| Authorization callback URL | `http://localhost:13008/api/oauth2-client/login/oauth2/code/github` | ★ 必须与 0.2 的回调 URL 完全一致 |
 
 Application description 可留空；Device Flow 不需要勾选。
 
@@ -229,7 +229,7 @@ GitHub 的 userinfo 端点（`https://api.github.com/user`）返回：
 5. 填写：
     - **Name**: `OAuth2 Lab Client`（任意）
     - **Authorized redirect URIs**（授权重定向 URI）: 点 **Add URI**，填
-      `http://localhost:18090/api/oauth2-client/login/oauth2/code/google`
+      `http://localhost:13008/api/oauth2-client/login/oauth2/code/google`
       （★ 必须与 0.2 的回调 URL 完全一致）
 6. 点 **Create** → 弹窗中记录 **Client ID** 和 **Client Secret**
 

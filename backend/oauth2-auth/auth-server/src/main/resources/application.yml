@@ -25,7 +25,7 @@ logging:
 app:
   oauth2:
     # 登出弹窗白名单（逗号分隔）：仅允许这些源地址 postMessage 回跳，防御开放重定向与反射型 XSS；
-    # 本地为网关地址 localhost:18090，生产环境需配置实际域名
-    allowed-logout-origins: http://localhost:18090
+    # 本地为前端地址 localhost:13008（vite 代理承担统一入口），生产环境需配置实际域名
+    allowed-logout-origins: http://localhost:13008
   jwk:
     persistence-file: ./jwk-key.json   # RSA 密钥持久化文件（重启后已签发 JWT 仍有效；⚠ 含私钥，勿提交到仓库，生产建议密钥管理服务）

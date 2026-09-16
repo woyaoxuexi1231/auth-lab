@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 public class LoginController {
 
     /** auth-server 独立入口：根路径 / 与 /api/oauth2-auth 重定向到客户端管理页（未登录会先跳登录）。
-     *  背景：登录成功后如果没有 saved-request，Spring Security 默认会跳 /；但 / 在网关（18090）上没有路由会 404。
+     *  背景：登录成功后如果没有 saved-request，Spring Security 默认会跳 /；但 / 不是后端端点会 404。
      *  这里把根路径统一指到客户端管理页，保证 auth-server 单独打开时始终能进入可用页面。 */
     @GetMapping({"/", "/api/oauth2-auth"})
     public String index() {

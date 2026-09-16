@@ -22,8 +22,3 @@ spring:
     redis:
       host: @redis.host@
       port: @redis.port@
-  cloud:
-    nacos:
-      discovery:
-        server-addr: @nacos.host@:@nacos.port@
-        ip: @nacos.ip@

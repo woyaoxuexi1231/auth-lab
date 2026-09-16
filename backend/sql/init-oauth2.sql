@@ -96,7 +96,7 @@ CREATE TABLE IF NOT EXISTS `oauth2_registered_client`
 
 -- ============================================================
 -- 初始化内置客户端 lab-client（密钥明文 secret，BCrypt 密文）
--- 注意：redirect_uris 是环境相关的（本地默认 localhost:18090）。
+-- 注意：redirect_uris 是环境相关的（本地默认 localhost:13008，vite 代理承担统一入口）。
 -- 换环境（Docker / 服务器 / 生产）时，请在客户端管理页删除重建，或用 SQL 更新本行。
 -- ============================================================
 INSERT IGNORE INTO `oauth2_registered_client`
@@ -106,6 +106,6 @@ INSERT IGNORE INTO `oauth2_registered_client`
 VALUES ('lab-client-001', 'lab-client', '{bcrypt}$2a$10$wMGCrH.dDAfQfs9iJjF0Ae..cRQs1/EZtp37CNabJnZHsvrxEG58K',
         '实验室OAuth2客户端', 'client_secret_basic,client_secret_post',
         'authorization_code,refresh_token',
-        'http://localhost:18090/api/oauth2-client/login/oauth2/code/lab-client',
+        'http://localhost:13008/api/oauth2-client/login/oauth2/code/lab-client',
         'openid,profile,read',
         1, 3600, 604800, 0);

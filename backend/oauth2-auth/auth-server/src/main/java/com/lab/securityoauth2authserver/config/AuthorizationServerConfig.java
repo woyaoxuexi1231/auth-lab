@@ -87,7 +87,7 @@ public class AuthorizationServerConfig {
      * 自定义 OAuth2 端点路径和 issuer。
      *
      * <p>issuer 会写入 JWT 的 iss 声明，资源服务器用它验证 token 来源。
-     * 本地环境：http://localhost:18090（经网关），生产：公网网关地址。</p>
+     * 本地环境：http://localhost:13008（前端 vite 源），生产：前端公网源地址。</p>
      */
     @Bean
     public AuthorizationServerSettings authorizationServerSettings() {

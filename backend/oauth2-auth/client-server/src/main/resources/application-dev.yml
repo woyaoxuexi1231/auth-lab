@@ -2,17 +2,12 @@
 # OAuth2 客户端 — 开发环境配置
 # ============================================================
 app:
-  frontend-base-url: http://localhost:13000
+  frontend-base-url: http://localhost:13008
 
 server:
   forward-headers-strategy: NATIVE
 
 spring:
-  cloud:
-    nacos:
-      discovery:
-        server-addr: @nacos.host@:@nacos.port@
-        ip: @nacos.ip@
   datasource:
     url: jdbc:mysql://@mysql.host@:@mysql.port@/security_lab_oauth2_client?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&createDatabaseIfNotExist=true
     username: @mysql.username@

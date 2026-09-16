@@ -10,10 +10,9 @@
     <packaging>pom</packaging>
 
     <name>Auth Lab Backend</name>
-    <description>认证方案实验室 — Session / JWT / Opaque Token / OAuth2 + Gateway</description>
+    <description>认证方案实验室 — Session / JWT / Opaque Token / OAuth2</description>
 
     <modules>
-        <module>gateway</module>
         <module>session-auth</module>
         <module>jwt-auth</module>
         <module>opaque-auth</module>
@@ -27,8 +26,6 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
         <spring-boot.version>3.3.0</spring-boot.version>
-        <spring-cloud.version>2023.0.3</spring-cloud.version>
-        <spring-cloud-alibaba.version>2023.0.1.0</spring-cloud-alibaba.version>
 
         <maven-resources-plugin.version>3.3.1</maven-resources-plugin.version>
         <mybatis-plus.version>3.5.9</mybatis-plus.version>
@@ -42,20 +39,6 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-dependencies</artifactId>
                 <version>${spring-boot.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-            <dependency>
-                <groupId>org.springframework.cloud</groupId>
-                <artifactId>spring-cloud-dependencies</artifactId>
-                <version>${spring-cloud.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-            <dependency>
-                <groupId>com.alibaba.cloud</groupId>
-                <artifactId>spring-cloud-alibaba-dependencies</artifactId>
-                <version>${spring-cloud-alibaba.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -180,10 +163,7 @@
                 <redis.host>localhost</redis.host>
                 <redis.port>6379</redis.port>
                 <redis.password>123456</redis.password>
-                <nacos.host>localhost</nacos.host>
-                <nacos.port>28848</nacos.port>
-                <nacos.ip>localhost</nacos.ip>
-                <oauth2.base-url>http://localhost:18090</oauth2.base-url>
+                <oauth2.base-url>http://localhost:13008</oauth2.base-url>
             </properties>
         </profile>
         <profile>
@@ -198,10 +178,7 @@
                 <redis.host>CHANGE_ME</redis.host>
                 <redis.port>6379</redis.port>
                 <redis.password>CHANGE_ME</redis.password>
-                <nacos.host>CHANGE_ME</nacos.host>
-                <nacos.port>28848</nacos.port>
-                <nacos.ip>CHANGE_ME</nacos.ip>
-                <oauth2.base-url>http://CHANGE_ME:18090</oauth2.base-url>
+                <oauth2.base-url>http://CHANGE_ME</oauth2.base-url>
             </properties>
         </profile>
     </profiles>
