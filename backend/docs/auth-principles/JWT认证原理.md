@@ -51,7 +51,7 @@ eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZG1pbiJ9.5ZvF8Kc...
 │     "iat": 1754000000,           ← 签发时间                    │
 │     "exp": 1754003600,           ← 过期时间（必须）             │
 │     "aud": "security-lab",       ← 受众                       │
-│     "jti": "8f3a...",            ← 唯一 ID（防重放）           │
+│     "jti": "8f3a...",            ← 唯一 ID（日志用）           │
 │     "authorities": ["ROLE_ADMIN"]  ← 自定义声明：权限           │
 │   }                                                        │
 │   → Base64Url 编码                                            │
@@ -61,6 +61,8 @@ eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZG1pbiJ9.5ZvF8Kc...
 │   → Base64Url 编码                                            │
 └──────────────────────────────────────────────────────────────┘
 ```
+
+> 图中标"必填 / 必须"的声明，是**本项目按安全与运维需要主动填满的**，规范并不强制 —— 判据见 2.1。
 
 三个要点：
 
@@ -72,6 +74,153 @@ eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZG1pbiJ9.5ZvF8Kc...
 3. **算法不匹配是无效的**。Token 里声明了 `alg=HS256`，服务器必须用
    `HS256` 去验——所以服务器只信任自己配置的算法（防止 `alg=none`
    之类的降级攻击）。
+
+### 2.1 哪些声明是必填的？（先破一个常见误解）
+
+**结论：RFC 7519 一个都不强制。** 规范原文（§4.1）：
+
+> "None of the claims defined below are intended to be mandatory to use or implement in all cases…"
+
+这些名字之所以"看起来必须"，是因为它们被**注册（registered）**了——名字、类型、语义全部规定死
+（`exp` / `nbf` / `iat` 必须是**秒级**数字时间戳，`aud` 可以是字符串或数组），
+所以各语言库才为它们提供了类型化方法（jjwt 的 `.subject()` / `.expiration()` …）。
+**"有定义"不等于"必须出现"。** 实测（jjwt 0.12.6）：
+
+```
+Jwts.builder().claim("hello", "world").signWith(key, Jwts.SIG.HS256).compact()
+  → {"hello":"world"}     ← 没有 sub / iss / aud / iat / exp / jti
+  → 解析器正常解析，sub 取出来是 null，没有任何"缺少必填声明"的报错
+```
+
+那"必填"从哪来？**只有两个来源**：
+
+| 来源 | 说明 |
+|---|---|
+| **你的校验端** | 解析时 `require` 了什么，什么就真的必填。本项目 `JwtUtil.parseToken()` 里的 `requireIssuer` / `requireAudience` 就是干这个的 —— **这是唯一的技术真源** |
+| **你遵循的 profile** | OIDC 身份令牌：`iss` / `sub` / `aud` / `exp` / `iat`；RFC 9068 JWT 访问令牌：`iss` / `exp` / `aud` / `sub` / `client_id` / `iat` / `jti` |
+
+一句话记法：
+
+> **规范规定字段"怎么写"，你规定哪些"必须写"；你 require 了的，才真的必填。**
+
+（另有两个"条件强制"值得知道：`exp` / `nbf` 一旦出现，校验方 **必须** 检查；
+同一个 issuer 面向多个接收方时，RFC 8725 要求签发方 **必须** 带 `aud` 且接收方 **必须** 验。）
+
+### 2.2 本项目的选择：这 4 个必须填
+
+| 声明 | 填？ | 不填会怎样 |
+|---|---|---|
+| `exp` | ✅ 必须 | 永不过期的凭据 = 永久后门 |
+| `iss` | ✅ 必须 | 不知道谁签的；多系统共用密钥时无法区分 |
+| `aud` | ✅ 必须 | A 系统签的 Token 能拿去打 B 系统 |
+| `sub` | ✅ 必须 | 校验端不知道"这是谁" |
+| `iat` / `jti` | 建议 | 排查问题、算凭据年龄 / 日志追踪、将来接黑名单 |
+| 自定义业务字段 | 越少越好 | 体积、泄密、快照过期 |
+
+它们之所以"该填"，是**安全和运维的需要**，不是哪份规范拿枪指着你 ——
+逐行代码注释见 `jwt-auth/.../util/JwtUtil.java#generateAccessToken()`。
+
+### 2.3 载荷里放什么、不放什么
+
+| | 内容 | 原因 |
+|---|---|---|
+| ✅ | 稳定的身份标识（`sub`）、权限、受众（`aud`） | 这正是"自包含"的意义：校验端不查库就能用 |
+| ❌ | 敏感信息（手机号、身份证、内部备注…） | Payload 只是 Base64Url，**不是加密**，谁都能解 |
+| ❌ | 易变信息（余额、昵称、频繁变更的权限） | 签发即快照：改不了、撤不回，只能等 `exp` |
+| ❌ | 大块数据 | Token 每个请求都背在请求头上（Tomcat / Nginx 默认 8KB 上限） |
+
+> JWT 本质上做不到的三件事及对策：**撤销** → 短 TTL + 黑名单（对照 `opaque-auth` 模块）；
+> **保密** → JWE（加密，5 段式）；**防重放** → 服务端存已用 `jti`（本模块未做，`jti` 目前只用于日志追踪）。
+
+### 2.4 三段是怎么造出来的？怎么验的？（用真实密钥手算一遍）
+
+先纠正一个词：**JWT 是"签名"，不是"加密"，所以没有"解密"这一步。**
+三段里只有第三段涉及密码学，而且只用了**一个**运算：`HMAC-SHA256`。
+第二段谁都能读（下面第 4 条会看到）——签名只保证"没被改过、确实是我签的"。
+
+#### ① 怎么造出来：3 步
+
+```
+Claims（一个 JSON 对象）
+    ↓ 1. JSON 序列化成 UTF-8 字节                     ← 到这里还是明文
+   {"sub":"admin","authorities":["ROLE_ADMIN"],"aud":["security-lab"],
+    "iss":"security-jwt-auth-server","iat":1754000000,"exp":1754003600,"jti":"8f3a…"}
+    ↓ 2. Base64Url 编码（换一种文本表示，任何人都能还原）
+   eyJzdWIiOiJhZG1pbiIsImF1dGhvcml0aWVzIjpbIlJPTEVfQURNSU4iXS…
+    ↓ 3. 与 Header 段拼起来（中间加一个点），对这段字符串做 HMAC-SHA256，结果再 Base64Url
+   HMAC-SHA256("段1.段2", 密钥) → Mic8TBoVlGLRMvATR5v19QzLRGfukR5m2GX0cw8l_uw
+    ↓
+段1.段2.段3  ← 最终 Token
+```
+
+Header 段同样这么来：`{"alg":"HS256"}` → Base64Url → `eyJhbGciOiJIUzI1NiJ9`。
+
+实测（本模块配置里的 `app.jwt.secret`，jjwt 0.12.6）：
+
+| 段 | 值 |
+|---|---|
+| 段1 Header | `eyJhbGciOiJIUzI1NiJ9` → 解码 `{"alg":"HS256"}` |
+| 段2 Payload | `eyJzdWIiOiJhZG1pbiIsImF1dGhvcml0aWVzIjpbIlJPTEVfQURNSU4iXSwiYXVkIjpbInNlY3VyaXR5LWxhYiJdLCJpc3MiOiJzZWN1cml0eS1qd3QtYXV0aC1zZXJ2ZXIiLCJpYXQiOjE3NTQwMDAwMDAsImV4cCI6MTc1NDAwMzYwMCwianRpIjoiOGYzYTFjNWUtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAxIn0` |
+| 段3 Signature | `Mic8TBoVlGLRMvATR5v19QzLRGfukR5m2GX0cw8l_uw` |
+| **手工**用 `Mac.getInstance("HmacSHA256")` 对 `段1.段2` 算出的值 | `Mic8TBoVlGLRMvATR5v19QzLRGfukR5m2GX0cw8l_uw` ← **与段3逐字符相同** |
+
+也就是说：**第三段 = HMAC-SHA256(段1 + "." + 段2, 密钥)，再 Base64Url**，没有别的花样。
+代码里对应 `JwtUtil.generateAccessToken()` 的 `.signWith(signingKey, Jwts.SIG.HS256)`。
+
+#### ② 怎么验：3 步，全程本地计算
+
+```
+1. 切：按 . 切成三段
+2. 算：用自己手里的密钥，对 "段1.段2" 重算一遍 HMAC-SHA256
+3. 比：重算值 == 段3 ？相等 → 内容没被改过；不等 → 拒绝（jjwt 抛 SignatureException）
+   随后再检查 exp 是否过期、iss / aud 是否匹配（判据见 2.1）
+```
+
+实测篡改：把段2 解码后的 `"admin"` 改成 `"root"`、段3 照抄旧的 →
+`用旧签名验得过吗：false`，jjwt 抛 `SignatureException`。
+
+#### ③ 没有密钥也能读前两段（所以"解密"这件事不存在）
+
+```
+不提供任何密钥，Base64Url 解码段2 →
+{"sub":"admin","authorities":["ROLE_ADMIN"],"aud":["security-lab"],"iss":"security-jwt-auth-server","iat":1754000000,"exp":1754003600,"jti":"8f3a…"}
+```
+
+Payload 从来没有被加密，只是换了文本编码。所以"不要往 Payload 放敏感信息"不是建议，
+是它**根本不提供保密性**。真需要保密要用 **JWE**（5 段结构，Payload 是密文，那才叫加解密）。
+
+> 顺带一个实测细节：上面的 Header 解码后只有 `{"alg":"HS256"}`，**没有 `typ`** ——
+> jjwt 0.12 默认不写它；RFC 8725 §3.11 建议显式声明 `typ` 以防类型混淆。
+
+#### ④ 两个容易踩的细节
+
+**密钥不是那串可见字符。** 配置里存的是 Base64，代码里先解码再当密钥用
+（`JwtUtil` 构造函数的 `Decoders.BASE64.decode(secret)`）：
+
+```
+配置字符串 : c2VjdXJlLXNlY3JldC1mb3Itand0LWF1dGgtc2VydmVyLTIwMjQtYmxhYmxh
+解码后字节 : secure-secret-for-jwt-auth-server-2024-blabla   （45 字节 = 360 位；HS256 下限 256 位）
+```
+
+拿字符串本身当密钥算出来的是 `LfrpV1NYcyCFBSuEf-N8C8uxlmpsRqFprXotOQWTw48`，**验不过**。
+之所以用 Base64 存：HMAC 密钥是任意二进制，Base64 让它能安全地写进 yml。
+
+**Base64Url ≠ Base64**，两处差别都是为了能安全塞进 URL / Header：
+
+| | 标准 Base64 | Base64Url（JWT 用） |
+|---|---|---|
+| 字母表 | `+` `/` | `-` `_` |
+| 补位 | 用 `=` 补到 4 的倍数 | **去掉** `=` |
+| 同一串字节 | `+///`、`AQ==` | `-___`、`AQ` |
+
+#### ⑤ HS256 和 RS256 的区别（本仓库两种都有）
+
+| | HS256（`jwt-auth` 模块） | RS256（`oauth2-auth` 模块） |
+|---|---|---|
+| 密钥 | 对称密钥，签和验用同一把 | 私钥签、公钥验（JWKS 分发） |
+| 段3 怎么来 | `HMAC-SHA256(段1.段2, 密钥)` | `RSA-SHA256(段1.段2, 私钥)` |
+| 谁能签发 | 任何拿到密钥的人 | 只有持有私钥的签发方 |
+| 适用 | 签发方 = 校验方（单体） | 多服务共享验签，校验方拿不到签发权 |
 
 ---
 
@@ -85,12 +234,13 @@ eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZG1pbiJ9.5ZvF8Kc...
 ② 服务器验证凭证（查用户 + 比对密码哈希）
       ↓
 ③ 验证通过 → 服务器签发 JWT：
-   - 组装 Claims：sub=admin、authorities=[...]、iat=now、exp=now+TTL
-   - 用密钥对 Header.Payload 计算签名
-   - 拼成 eyJhbGci...eyJzdWI...5ZvF8...
-      ↓
+  - 组装 Claims：sub=admin、authorities=[...]、iss、aud、iat=now、exp=now+TTL、jti
+  - 用 HS256 + 密钥对 Header.Payload 计算签名
+  - 拼成 eyJhbGci...eyJzdWI...5ZvF8...
+     ↓
 ④ 服务器把 JWT 放进响应体返回（本流程不走 Cookie！）
-   { "accessToken": "eyJhbGci...", "tokenType": "Bearer", "expiresIn": 3600000 }
+  { "token": "eyJhbGci...", "tokenType": "Bearer", "expiresIn": 3600 }
+  （expiresIn 单位是**秒** —— RFC 6749 惯例；配置里写的是毫秒，接口层负责换算）
       ↓
 ⑤ 客户端自己决定怎么存（内存 / localStorage）
 ```
@@ -109,7 +259,7 @@ eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZG1pbiJ9.5ZvF8Kc...
 ③ 服务器提取 Token，做三步验证（全部本地计算，零存储查询）：
    a. 验签：用密钥重算 HMAC，与 Token 自带签名比对 → 防篡改/防伪造
    b. 验期：exp > 当前时间 → 防过期复用
-   c. 提取 Claims → 得到 sub、authorities
+   c. 校验 iss / aud，然后提取 Claims → 得到 sub、authorities
       ↓
 ④ 服务器信任验证结果，按 Claims 中的身份和权限处理请求
 ```
@@ -118,6 +268,11 @@ eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZG1pbiJ9.5ZvF8Kc...
 只依赖"密钥只有服务器知道"这一前提。所以在分布式场景下，
 任何一个持有同一密钥的服务都能独立验证 Token——这就是 JWT 对
 微服务架构友好的原因。
+
+> **本仓库 `jwt-auth` 模块的取舍**：它的过滤器在上面这步之外，还回查了一次数据库
+> ——复查 enabled / locked 等账号状态、并以 DB 权限为准。好处是**禁用账号、调整角色立即生效**，
+> 代价是每请求一次查询。上面描述的"零存储查询"才是纯 JWT 形态：去掉过滤器里
+> 第 5.2 节的 ⑥⑦⑧ 三步、直接信任 Claims 即可（撤销就只能等 exp 到期，取舍见 3.3 节与 `opaque-auth` 模块）。
 
 ### 3.3 登出：无操作（这就是问题）
 
@@ -138,7 +293,7 @@ JWT 登出：   Token 还在客户端手里，服务器无法让它失效 ❌
   │ ─────────────────────────────────▶│
   │                                   │ ① 验证凭证
   │                                   │ ② 组装 Claims + 密钥签名
-  │  {accessToken: "eyJhbGci..."}     │
+  │  {token: "eyJhbGci..."}             │
   │ ◀─────────────────────────────────│
   │                                   │
   │  GET /api/profile                 │
@@ -305,7 +460,7 @@ AuthController：
   │    → PasswordEncoder.matches()（比对密码）
   │ ② 认证成功 → JwtUtil.generateAccessToken(userDetails)
   │    → 组装 Claims（sub / authorities / exp…）→ 密钥签名 → JWT 字符串
-  │ ③ 返回 JSON {accessToken, tokenType, expiresIn}
+  │ ③ 返回 JSON {token, tokenType, expiresIn}
   ▼
 前端保存 Token（内存 / localStorage）
 ```
@@ -320,11 +475,11 @@ AuthController：
   ▼
 过滤器链：JwtAuthenticationFilter（自定义，请求一进来就执行）
   │ ① 取 Authorization 头 → ② 检查 "Bearer " 前缀 → ③ 截取 JWT 字符串
-  │ ④ jwtUtil.extractUsername() ← 内部已验签（签名不匹配即抛异常）
-  │ ⑤ SecurityContext 已有认证？→ 有则跳过（避免重复处理）
-  │ ⑥ UserDetailsService 查库 → 确认账号状态、拿最新权限
-  │ ⑦ jwtUtil.isTokenValid()（用户名比对 + exp 检查）
-  │ ⑧ jwtUtil.extractAuthorities() 从 Claims 取权限
+  │ ④ jwtUtil.parseToken() ← 一次解析完成验签 + 验期 + 校验 iss/aud（抛异常即 Token 无效）
+  │ ⑤ 取 Claims.sub；SecurityContext 已有认证？→ 有则跳过（避免重复处理）
+  │ ⑥ UserDetailsService 查库（权威数据源：账号状态 + 权限）
+  │ ⑦ 复查账号状态：enabled / accountNonLocked / accountNonExpired / credentialsNonExpired
+  │ ⑧ 权限取 DB 当前值（Token 里的 authorities 只作快照，差异记 DEBUG 日志）
   │ ⑨ 创建 3 参数 UsernamePasswordAuthenticationToken（= 已认证）
   │ ⑩ 设置 details（IP 等审计信息）
   │ ⑪ SecurityContextHolder.setAuthentication() ★ 认证恢复完成
@@ -337,7 +492,8 @@ Controller → 200 OK
 请求结束：SecurityContextHolder 自动清空（没有 Session 可存，状态随之消失）
 ```
 
-对照机制第 3.2 节：③（验签+验期）在 ④⑦，④（信任 Claims）在 ⑧⑨⑪。
+对照机制第 3.2 节：③（验签 + 验期 + 校验 iss/aud）在 ④；⑥⑦⑧ 是"回查权威数据源"的补充动作
+（机制里刻意没有这一步，它是本模块为"撤销立即生效"付的代价）；④（信任结果）落在 ⑨⑪。
 
 #### ③ 过滤器"只认人、不拒人"的设计
 
