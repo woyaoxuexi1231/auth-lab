@@ -1,12 +1,15 @@
 <!--
-  OAuth2 三方认证演示。
-  弹窗 / postMessage 逻辑：
-  oauthLogin 的 popup 打开 + 500ms 轮询 + location.href 兜底；
-  handlePopupMessage 的 origin 白名单；notifyOpenerAndClose 的 opener postMessage + close；isPopup。
-  仅把 fetch(VITE_API_CLIENT+...) 换成 api/oauth2.js + 重排样式。
+  OAuth2 三方认证演示（主入口，弹窗流程）。
+  本地账号：POST /api/oauth2-client/auth/login（form-urlencoded，可能 302 → redirect manual + raw）。
+  三方登录：window.open('/api/oauth2-client/authorization/{provider}')，
+            回传结果用双通道 —— 500ms 轮询弹窗关闭 + postMessage(type: 'oauth2-login-result')；
+            弹窗被浏览器拦截时兜底当前窗口跳转。
+  postMessage 做来源白名单校验；provider 列表单一来源于 api/oauth2.js 的 providers。
 -->
-<script>
-import oauth2, { providerLabel as providerLabelOf, defaultAvatar } from '../../../api/oauth2'
+<script setup>
+import { computed, reactive, ref, onMounted, onBeforeUnmount } from 'vue'
+import { useRoute } from 'vue-router'
+import oauth2, { providers, providerLabel, defaultAvatar } from '../../../api/oauth2'
 import PageHeader from '../../../components/PageHeader.vue'
 import StatusBar from '../../../components/StatusBar.vue'
 import AppCard from '../../../components/AppCard.vue'
@@ -14,102 +17,129 @@ import FormField from '../../../components/FormField.vue'
 import AppButton from '../../../components/AppButton.vue'
 import CodeBlock from '../../../components/CodeBlock.vue'
 
-export default {
-  name: 'OAuth2Auth',
-  components: { PageHeader, StatusBar, AppCard, FormField, AppButton, CodeBlock },
-  data () {
-    return {
-      loading: false, loggedIn: false, profile: null, responseText: '', loginError: '',
-      loginForm: { username: '', password: '' },
-      defaultAvatar,
-      allProviders: [{ id: 'lab-client', label: 'Lab Auth' }, { id: 'github', label: 'GitHub' }, { id: 'google', label: 'Google' }]
-    }
-  },
-  computed: {
-    isPopup () { return !!window.opener },
-    unboundProviders () {
-      if (!this.profile || !this.profile.bindings) return this.allProviders
-      const bound = this.profile.bindings.map(b => b.provider)
-      return this.allProviders.filter(p => !bound.includes(p.id))
-    }
-  },
-  created () { this._popupWindow = null; this._popupTimer = null },
-  mounted () {
-    window.addEventListener('message', this.handlePopupMessage)
-    if (this.$route.query.error) { this.responseText = 'OAuth2 错误: ' + this.$route.query.error; return }
-    this.checkAuthState()
-  },
-  beforeUnmount () { window.removeEventListener('message', this.handlePopupMessage); this.clearPopupTimer() },
-  methods: {
-    async doLogin () {
-      this.loginError = ''
-      if (!this.loginForm.username || !this.loginForm.password) { this.loginError = '请输入用户名和密码'; return }
-      this.loading = true
-      try {
-        const resp = await oauth2.login(this.loginForm)
-        if (resp.ok) { await this.checkAuthState() } else { this.loginError = (resp.data && resp.data.error) || '登录失败' }
-      } catch (e) { this.loginError = '网络错误: ' + e.message } finally { this.loading = false }
-    },
-    oauthLogin (provider) {
-      this.loading = true; this.responseText = ''
-      const popup = window.open(oauth2.authorizationUrl(provider), 'oauth2-login-popup', 'width=520,height=680,left=200,top=80')
-      if (!popup) { window.location.href = oauth2.authorizationUrl(provider); return }
-      this._popupWindow = popup; popup.focus()
-      this.clearPopupTimer()
-      this._popupTimer = window.setInterval(() => {
-        try {
-          if (this._popupWindow && this._popupWindow.closed) { this._popupWindow = null; this.clearPopupTimer(); this.loading = false; this.checkAuthState() }
-        } catch (e) { /* */ }
-      }, 500)
-    },
-    async checkAuthState () {
-      try {
-        const resp = await oauth2.profile({ manual: true })
-        if (resp.ok) {
-          const data = resp.data
-          this.loggedIn = true
-          this.profile = { name: data.name, email: data.email, avatar: data.avatarUrl || data.avatar_url || '', provider: data.provider || data.authType || '本地', bindings: data.bindings || [], hasPassword: data.hasPassword }
-          if (this.isPopup) { this.notifyOpenerAndClose({ status: 'success' }) }
-        }
-      } catch (e) { /* */ }
-      this.loading = false
-    },
-    async getProfile () {
-      try {
-        const data = await oauth2.profile()
-        this.responseText = JSON.stringify(data, null, 2)
-        this.profile.bindings = data.bindings || []
-      } catch (e) { this.responseText = '错误: ' + e.message }
-    },
-    async logout () {
-      this.loggedIn = false; this.profile = null
-      oauth2.logout()
-      this.responseText = '已退出登录'
-    },
-    canUnbind (binding) { if (this.profile.hasPassword) return true; return (this.profile.bindings && this.profile.bindings.length > 1) },
-    async unbindAccount (binding) {
-      if (!confirm('确定解绑 ' + this.providerLabel(binding.provider) + '？')) return
-      try {
-        const resp = await oauth2.unbind(binding.id)
-        this.responseText = resp.ok ? '解绑成功' : '失败: ' + ((resp.data && resp.data.error) || '')
-        if (resp.ok) this.getProfile()
-      } catch (e) { this.responseText = '解绑失败: ' + e.message }
-    },
-    handlePopupMessage (event) {
-      if (event.origin !== window.location.origin && event.origin !== import.meta.env.VITE_AUTH_SERVER_ORIGIN) return
-      if (!event.data || event.data.type !== 'oauth2-login-result') return
-      this.clearPopupTimer(); this.loading = false
-      if (event.data.status === 'success') { this.checkAuthState() } else { this.responseText = 'OAuth2 错误: ' + (event.data.error || 'unknown') }
-    },
-    notifyOpenerAndClose (payload) {
-      if (window.opener && !window.opener.closed) { window.opener.postMessage({ type: 'oauth2-login-result', ...payload }, window.location.origin) }
-      setTimeout(() => { if (window.opener && !window.opener.closed) window.close() }, 1500)
-    },
-    clearPopupTimer () { if (this._popupTimer) { window.clearInterval(this._popupTimer); this._popupTimer = null } },
-    providerLabel (p) { return providerLabelOf(p) },
-    formatDate (s) { return s ? s.substring(0, 10) : '-' }
-  }
+const route = useRoute()
+
+const loading = ref(false)
+const loggedIn = ref(false)
+const profile = ref(null)
+const responseText = ref('')
+const loginError = ref('')
+const loginForm = reactive({ username: '', password: '' })
+
+let popupWindow = null
+let popupTimer = null
+
+const isPopup = computed(() => !!window.opener)
+const unboundProviders = computed(() => {
+  if (!profile.value || !profile.value.bindings) return providers
+  const bound = profile.value.bindings.map(b => b.provider)
+  return providers.filter(p => !bound.includes(p.id))
+})
+
+function clearPopupTimer () {
+  if (popupTimer) { window.clearInterval(popupTimer); popupTimer = null }
 }
+
+async function doLogin () {
+  loginError.value = ''
+  if (!loginForm.username || !loginForm.password) { loginError.value = '请输入用户名和密码'; return }
+  loading.value = true
+  try {
+    const resp = await oauth2.login(loginForm)
+    if (resp.ok) { await checkAuthState() } else { loginError.value = (resp.data && resp.data.error) || '登录失败' }
+  } catch (e) { loginError.value = '网络错误: ' + e.message } finally { loading.value = false }
+}
+
+function oauthLogin (provider) {
+  loading.value = true; responseText.value = ''
+  const popup = window.open(oauth2.authorizationUrl(provider), 'oauth2-login-popup', 'width=520,height=680,left=200,top=80')
+  if (!popup) { window.location.href = oauth2.authorizationUrl(provider); return }
+  popupWindow = popup
+  popup.focus()
+  clearPopupTimer()
+  popupTimer = window.setInterval(() => {
+    try {
+      if (popupWindow && popupWindow.closed) {
+        popupWindow = null; clearPopupTimer(); loading.value = false; checkAuthState()
+      }
+    } catch (e) { /* 跨窗口属性访问可能被拦截，忽略 */ }
+  }, 500)
+}
+
+async function checkAuthState () {
+  try {
+    const resp = await oauth2.profile({ manual: true })
+    if (resp.ok) {
+      const data = resp.data
+      loggedIn.value = true
+      profile.value = {
+        name: data.name,
+        email: data.email,
+        avatar: data.avatarUrl || data.avatar_url || '',
+        provider: data.provider || data.authType || '本地',
+        bindings: data.bindings || [],
+        hasPassword: data.hasPassword
+      }
+      if (isPopup.value) notifyOpenerAndClose({ status: 'success' })
+    }
+  } catch (e) { /* 未登录属正常，保持未登录态 */ }
+  loading.value = false
+}
+
+async function getProfile () {
+  try {
+    const data = await oauth2.profile()
+    responseText.value = JSON.stringify(data, null, 2)
+    profile.value.bindings = data.bindings || []
+  } catch (e) { responseText.value = '错误: ' + e.message }
+}
+
+async function logout () {
+  loggedIn.value = false; profile.value = null
+  oauth2.logout()
+  responseText.value = '已退出登录'
+}
+
+function canUnbind (binding) {
+  if (profile.value.hasPassword) return true
+  return !!(profile.value.bindings && profile.value.bindings.length > 1)
+}
+
+async function unbindAccount (binding) {
+  if (!confirm('确定解绑 ' + providerLabel(binding.provider) + '？')) return
+  try {
+    const resp = await oauth2.unbind(binding.id)
+    responseText.value = resp.ok ? '解绑成功' : '失败: ' + ((resp.data && resp.data.error) || '')
+    if (resp.ok) getProfile()
+  } catch (e) { responseText.value = '解绑失败: ' + e.message }
+}
+
+function handlePopupMessage (event) {
+  if (event.origin !== window.location.origin && event.origin !== import.meta.env.VITE_AUTH_SERVER_ORIGIN) return
+  if (!event.data || event.data.type !== 'oauth2-login-result') return
+  clearPopupTimer(); loading.value = false
+  if (event.data.status === 'success') { checkAuthState() } else { responseText.value = 'OAuth2 错误: ' + (event.data.error || 'unknown') }
+}
+
+function notifyOpenerAndClose (payload) {
+  if (window.opener && !window.opener.closed) {
+    window.opener.postMessage({ type: 'oauth2-login-result', ...payload }, window.location.origin)
+  }
+  setTimeout(() => { if (window.opener && !window.opener.closed) window.close() }, 1500)
+}
+
+function formatDate (s) { return s ? s.substring(0, 10) : '-' }
+
+onMounted(() => {
+  window.addEventListener('message', handlePopupMessage)
+  if (route.query.error) { responseText.value = 'OAuth2 错误: ' + route.query.error; return }
+  checkAuthState()
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('message', handlePopupMessage)
+  clearPopupTimer()
+})
 </script>
 
 <template>

@@ -1,6 +1,7 @@
 /* ============================================================
-   Study Hub — 基础样式
-   安静书桌：纯色底、清晰字号、蓝链接
+   Auth Lab — 基础样式
+   全局 reset + 排版基线：纯色底、清晰字号、蓝链接。
+   依赖 tokens.css，须在其之后引入（见 main.js）。
    ============================================================ */
 
 *,
@@ -84,9 +85,6 @@ pre {
   margin: 0 auto;
   padding-left: var(--space-5);
   padding-right: var(--space-5);
-}
-.container--narrow {
-  max-width: var(--container-narrow);
 }
 
 img {

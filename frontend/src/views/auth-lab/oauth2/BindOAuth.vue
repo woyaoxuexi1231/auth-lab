@@ -1,6 +1,11 @@
-<!-- OAuth2 绑定页：注册/登录 tabs；成功后 opener postMessage 通知主窗口。
-     fetch 换 api/oauth2.js；tabs → SegmentedNav；样式重排。 -->
-<script>
+<!--
+  OAuth2 第三方绑定页（路由 /auth-lab/bind，由 client-server 在"三方账号未绑定"时 302 进入弹窗）。
+  读取 /oauth-pending 拿到待绑定的三方用户，提供三条路径：
+  注册并绑定 / 已有账号登录并绑定 / 绑定到当前已登录账号。
+  成功后向 opener postMessage 通知主窗口，并自动关闭弹窗。
+-->
+<script setup>
+import { computed, reactive, ref, onMounted } from 'vue'
 import oauth2, { providerLabel as providerLabelOf, defaultAvatar } from '../../../api/oauth2'
 import PageHeader from '../../../components/PageHeader.vue'
 import AppCard from '../../../components/AppCard.vue'
@@ -8,80 +13,77 @@ import AppButton from '../../../components/AppButton.vue'
 import FormField from '../../../components/FormField.vue'
 import SegmentedNav from '../../../components/SegmentedNav.vue'
 
-export default {
-  name: 'BindOAuth',
-  components: { PageHeader, AppCard, AppButton, FormField, SegmentedNav },
-  data () {
-    return {
-      loading: false, tab: 'register', noSession: false, error: '', successMsg: '', alreadyLoggedIn: '',
-      tabs: [{ value: 'register', label: '注册新账号' }, { value: 'login', label: '已有账号' }],
-      defaultAvatar,
-      pending: { provider: '', providerUsername: '', email: '', avatarUrl: '' },
-      regForm: { username: '', password: '', email: '' },
-      loginForm: { username: '', password: '' }
-    }
-  },
-  computed: {
-    providerLabel () { return providerLabelOf(this.pending.provider) }
-  },
-  async mounted () {
-    try { const s = await oauth2.status(); if (s.authenticated) this.alreadyLoggedIn = s.username } catch (e) { /* */ }
-    try {
-      const r = await oauth2.oauthPending()
-      if (r.empty) { this.noSession = true } else {
-        this.pending.provider = r.provider || ''
-        this.pending.providerUsername = r.providerUsername || ''
-        this.pending.email = r.email || ''
-        this.pending.avatarUrl = r.avatarUrl || ''
-        this.regForm.email = r.email || ''
-      }
-    } catch (e) { this.error = '加载失败: ' + e.message }
-  },
-  methods: {
-    notifyOpener (payload) {
-      if (window.opener && !window.opener.closed) {
-        window.opener.postMessage({ type: 'oauth2-login-result', ...payload }, window.location.origin)
-      }
-    },
-    async directBind () {
-      this.error = ''; this.loading = true
-      try {
-        const resp = await oauth2.bindCurrent()
-        if (resp.ok) {
-          this.successMsg = '绑定成功！窗口即将自动关闭...'
-          this.notifyOpener({ status: 'success' })
-          setTimeout(() => { if (window.opener) window.close() }, 1500)
-        } else { this.error = (resp.data && resp.data.error) || '绑定失败' }
-      } catch (e) { this.error = '网络错误: ' + e.message } finally { this.loading = false }
-    },
-    async registerAndBind () {
-      this.error = ''
-      if (!this.regForm.username || !this.regForm.password) { this.error = '用户名和密码不能为空'; return }
-      this.loading = true
-      try {
-        const resp = await oauth2.bindRegister(this.regForm)
-        if (resp.ok) {
-          this.successMsg = '注册并绑定成功！窗口即将自动关闭...'
-          this.notifyOpener({ status: 'success' })
-          setTimeout(() => { if (window.opener) window.close() }, 1500)
-        } else { this.error = (resp.data && resp.data.error) || '注册失败' }
-      } catch (e) { this.error = '网络错误: ' + e.message } finally { this.loading = false }
-    },
-    async loginAndBind () {
-      this.error = ''
-      if (!this.loginForm.username || !this.loginForm.password) { this.error = '用户名和密码不能为空'; return }
-      this.loading = true
-      try {
-        const resp = await oauth2.bindLogin(this.loginForm)
-        if (resp.ok) {
-          this.successMsg = '登录并绑定成功！窗口即将自动关闭...'
-          this.notifyOpener({ status: 'success' })
-          setTimeout(() => { if (window.opener) window.close() }, 1500)
-        } else { this.error = (resp.data && resp.data.error) || '绑定失败' }
-      } catch (e) { this.error = '网络错误: ' + e.message } finally { this.loading = false }
-    }
+const loading = ref(false)
+const tab = ref('register')
+const noSession = ref(false)
+const error = ref('')
+const successMsg = ref('')
+const alreadyLoggedIn = ref('')
+
+const tabs = [
+  { value: 'register', label: '注册新账号' },
+  { value: 'login', label: '已有账号' }
+]
+const pending = reactive({ provider: '', providerUsername: '', email: '', avatarUrl: '' })
+const regForm = reactive({ username: '', password: '', email: '' })
+const loginForm = reactive({ username: '', password: '' })
+
+const providerLabel = computed(() => providerLabelOf(pending.provider))
+
+function notifyOpener (payload) {
+  if (window.opener && !window.opener.closed) {
+    window.opener.postMessage({ type: 'oauth2-login-result', ...payload }, window.location.origin)
   }
 }
+
+/** 绑定成功统一收尾：提示 + 通知 opener + 自动关窗 */
+function onBound (message) {
+  successMsg.value = message
+  notifyOpener({ status: 'success' })
+  setTimeout(() => { if (window.opener) window.close() }, 1500)
+}
+
+async function directBind () {
+  error.value = ''; loading.value = true
+  try {
+    const resp = await oauth2.bindCurrent()
+    if (resp.ok) { onBound('绑定成功！窗口即将自动关闭...') } else { error.value = (resp.data && resp.data.error) || '绑定失败' }
+  } catch (e) { error.value = '网络错误: ' + e.message } finally { loading.value = false }
+}
+
+async function registerAndBind () {
+  error.value = ''
+  if (!regForm.username || !regForm.password) { error.value = '用户名和密码不能为空'; return }
+  loading.value = true
+  try {
+    const resp = await oauth2.bindRegister(regForm)
+    if (resp.ok) { onBound('注册并绑定成功！窗口即将自动关闭...') } else { error.value = (resp.data && resp.data.error) || '注册失败' }
+  } catch (e) { error.value = '网络错误: ' + e.message } finally { loading.value = false }
+}
+
+async function loginAndBind () {
+  error.value = ''
+  if (!loginForm.username || !loginForm.password) { error.value = '用户名和密码不能为空'; return }
+  loading.value = true
+  try {
+    const resp = await oauth2.bindLogin(loginForm)
+    if (resp.ok) { onBound('登录并绑定成功！窗口即将自动关闭...') } else { error.value = (resp.data && resp.data.error) || '绑定失败' }
+  } catch (e) { error.value = '网络错误: ' + e.message } finally { loading.value = false }
+}
+
+onMounted(async () => {
+  try { const s = await oauth2.status(); if (s.authenticated) alreadyLoggedIn.value = s.username } catch (e) { /* 未登录属正常 */ }
+  try {
+    const r = await oauth2.oauthPending()
+    if (r.empty) { noSession.value = true } else {
+      pending.provider = r.provider || ''
+      pending.providerUsername = r.providerUsername || ''
+      pending.email = r.email || ''
+      pending.avatarUrl = r.avatarUrl || ''
+      regForm.email = r.email || ''
+    }
+  } catch (e) { error.value = '加载失败: ' + e.message }
+})
 </script>
 
 <template>

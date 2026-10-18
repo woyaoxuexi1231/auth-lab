@@ -1,6 +1,10 @@
-<!-- Session 认证演示：Cookie + Redis Session。
-     form-urlencoded 登录，raw 输出 HTTP 状态与原文；无 token 持久化（服务端 cookie 管理）。 -->
-<script>
+<!--
+  Session 认证演示（端口 18082，前缀 /api/session）。
+  登录用 form-urlencoded，raw 取 HTTP 状态与响应原文；
+  不做任何 token 持久化 —— 登录态完全由服务端 Redis Session + Cookie 承载。
+-->
+<script setup>
+import { ref } from 'vue'
 import authSession from '../../../api/authSession'
 import PageHeader from '../../../components/PageHeader.vue'
 import StatusBar from '../../../components/StatusBar.vue'
@@ -8,50 +12,44 @@ import FormField from '../../../components/FormField.vue'
 import AppButton from '../../../components/AppButton.vue'
 import CodeBlock from '../../../components/CodeBlock.vue'
 
-export default {
-  name: 'SessionDemo',
-  components: { PageHeader, StatusBar, FormField, AppButton, CodeBlock },
-  data () {
-    return {
-      username: '',
-      password: '',
-      loading: false,
-      loggedIn: false,
-      profile: null,
-      responseText: ''
-    }
-  },
-  methods: {
-    async login () {
-      this.loading = true
-      try {
-        const resp = await authSession.login({ username: this.username, password: this.password }, true)
-        this.responseText = 'HTTP ' + resp.status + '\n' + (resp.text || '')
-        if (resp.ok) { this.loggedIn = true; await this.getProfile() }
-      } catch (e) { this.responseText = '错误: ' + e.message } finally { this.loading = false }
-    },
-    async callPublic () {
-      try {
-        const resp = await authSession.publicHello()
-        this.responseText = JSON.stringify(resp.data, null, 2)
-      } catch (e) { this.responseText = '错误: ' + e.message }
-    },
-    async getProfile () {
-      try {
-        const resp = await authSession.profile()
-        this.responseText = 'HTTP ' + resp.status + '\n' + JSON.stringify(resp.data, null, 2)
-        if (resp.ok) { this.profile = resp.data; this.loggedIn = true }
-      } catch (e) { this.responseText = '错误: ' + e.message }
-    },
-    async logout () {
-      try {
-        await authSession.logout()
-        this.loggedIn = false
-        this.profile = null
-        this.responseText = '已登出'
-      } catch (e) { this.responseText = '错误: ' + e.message }
-    }
-  }
+const username = ref('')
+const password = ref('')
+const loading = ref(false)
+const loggedIn = ref(false)
+const profile = ref(null)
+const responseText = ref('')
+
+async function login () {
+  loading.value = true
+  try {
+    const resp = await authSession.login({ username: username.value, password: password.value }, true)
+    responseText.value = 'HTTP ' + resp.status + '\n' + (resp.text || '')
+    if (resp.ok) { loggedIn.value = true; await getProfile() }
+  } catch (e) { responseText.value = '错误: ' + e.message } finally { loading.value = false }
+}
+
+async function callPublic () {
+  try {
+    const resp = await authSession.publicHello()
+    responseText.value = JSON.stringify(resp.data, null, 2)
+  } catch (e) { responseText.value = '错误: ' + e.message }
+}
+
+async function getProfile () {
+  try {
+    const resp = await authSession.profile()
+    responseText.value = 'HTTP ' + resp.status + '\n' + JSON.stringify(resp.data, null, 2)
+    if (resp.ok) { profile.value = resp.data; loggedIn.value = true }
+  } catch (e) { responseText.value = '错误: ' + e.message }
+}
+
+async function logout () {
+  try {
+    await authSession.logout()
+    loggedIn.value = false
+    profile.value = null
+    responseText.value = '已登出'
+  } catch (e) { responseText.value = '错误: ' + e.message }
 }
 </script>
 

@@ -55,9 +55,17 @@ export const oauth2 = {
   }
 }
 
+/** 支持的第三方提供商 —— 唯一来源，视图直接用它渲染登录/绑定入口 */
+export const providers = [
+  { id: 'lab-client', label: 'Lab Auth' },
+  { id: 'github', label: 'GitHub' },
+  { id: 'google', label: 'Google' }
+]
+
 /** 提供商显示名（中性标签） */
 export function providerLabel (p) {
-  return ({ 'lab-client': 'Lab Auth', github: 'GitHub', google: 'Google' })[p] || p
+  const hit = providers.find(item => item.id === p)
+  return hit ? hit.label : p
 }
 
 /** 默认头像（SVG 占位） */

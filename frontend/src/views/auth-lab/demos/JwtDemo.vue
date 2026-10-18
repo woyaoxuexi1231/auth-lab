@@ -1,7 +1,10 @@
-<!-- JWT 认证演示：无状态 Token。
-     token 存 localStorage（key: jwt_token），请求带 Authorization: Bearer；
-     JWT 无法撤销，登出仅本地清除。 -->
-<script>
+<!--
+  JWT 认证演示（端口 18083，前缀 /api/jwt）。
+  服务端签发 JWT，客户端存 localStorage（key: jwt_token），请求带 Authorization: Bearer。
+  JWT 无状态、不可撤销，因此登出仅本地清除 token，服务端无感。
+-->
+<script setup>
+import { ref, computed } from 'vue'
 import authJwt from '../../../api/authJwt'
 import PageHeader from '../../../components/PageHeader.vue'
 import StatusBar from '../../../components/StatusBar.vue'
@@ -9,56 +12,49 @@ import FormField from '../../../components/FormField.vue'
 import AppButton from '../../../components/AppButton.vue'
 import CodeBlock from '../../../components/CodeBlock.vue'
 
-export default {
-  name: 'JwtDemo',
-  components: { PageHeader, StatusBar, FormField, AppButton, CodeBlock },
-  data () {
-    return {
-      username: '',
-      password: '',
-      token: localStorage.getItem('jwt_token') || '',
-      loading: false,
-      profile: null,
-      responseText: ''
+const username = ref('')
+const password = ref('')
+const token = ref(localStorage.getItem('jwt_token') || '')
+const loading = ref(false)
+const profile = ref(null)
+const responseText = ref('')
+
+const isLoggedIn = computed(() => !!token.value)
+const tokenPreview = computed(() => (token.value ? token.value.substring(0, 40) + '...' : ''))
+
+async function login () {
+  loading.value = true
+  try {
+    const resp = await authJwt.login({ username: username.value, password: password.value })
+    responseText.value = JSON.stringify(resp.data, null, 2)
+    if (resp.ok && resp.data && resp.data.token) {
+      token.value = resp.data.token
+      localStorage.setItem('jwt_token', token.value)
+      await getProfile()
     }
-  },
-  computed: {
-    isLoggedIn () { return !!this.token },
-    tokenPreview () { return this.token ? this.token.substring(0, 40) + '...' : '' }
-  },
-  methods: {
-    async login () {
-      this.loading = true
-      try {
-        const resp = await authJwt.login({ username: this.username, password: this.password })
-        this.responseText = JSON.stringify(resp.data, null, 2)
-        if (resp.ok && resp.data && resp.data.token) {
-          this.token = resp.data.token
-          localStorage.setItem('jwt_token', this.token)
-          await this.getProfile()
-        }
-      } catch (e) { this.responseText = '错误: ' + e.message } finally { this.loading = false }
-    },
-    async callPublic () {
-      try {
-        const resp = await authJwt.publicHello()
-        this.responseText = JSON.stringify(resp.data, null, 2)
-      } catch (e) { this.responseText = '错误: ' + e.message }
-    },
-    async getProfile () {
-      try {
-        const resp = await authJwt.profile(this.token)
-        this.responseText = 'HTTP ' + resp.status + '\n' + JSON.stringify(resp.data, null, 2)
-        if (resp.ok) this.profile = resp.data
-      } catch (e) { this.responseText = '错误: ' + e.message }
-    },
-    logout () {
-      this.token = ''
-      this.profile = null
-      localStorage.removeItem('jwt_token')
-      this.responseText = '已登出（JWT 无法撤销，过期前仍有效）'
-    }
-  }
+  } catch (e) { responseText.value = '错误: ' + e.message } finally { loading.value = false }
+}
+
+async function callPublic () {
+  try {
+    const resp = await authJwt.publicHello()
+    responseText.value = JSON.stringify(resp.data, null, 2)
+  } catch (e) { responseText.value = '错误: ' + e.message }
+}
+
+async function getProfile () {
+  try {
+    const resp = await authJwt.profile(token.value)
+    responseText.value = 'HTTP ' + resp.status + '\n' + JSON.stringify(resp.data, null, 2)
+    if (resp.ok) profile.value = resp.data
+  } catch (e) { responseText.value = '错误: ' + e.message }
+}
+
+function logout () {
+  token.value = ''
+  profile.value = null
+  localStorage.removeItem('jwt_token')
+  responseText.value = '已登出（JWT 无法撤销，过期前仍有效）'
 }
 </script>
 

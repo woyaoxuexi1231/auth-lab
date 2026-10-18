@@ -1,33 +1,44 @@
-<!-- OAuth2 注册页（路由名 LoginPage，语义是注册新账号） -->
-<script>
+<!--
+  OAuth2 本地账号注册页（路由 /auth-lab/register，组件名沿用 LoginPage）。
+  进入时先查 /auth/status，已登录则直接回 /auth-lab/oauth2，避免重复注册。
+-->
+<script setup>
+import { reactive, ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import oauth2 from '../../../api/oauth2'
 import PageHeader from '../../../components/PageHeader.vue'
 import FormField from '../../../components/FormField.vue'
 import AppButton from '../../../components/AppButton.vue'
 
-export default {
-  name: 'LoginPage',
-  components: { PageHeader, FormField, AppButton },
-  data () { return { loading: false, error: '', successMsg: '', form: { username: '', password: '', email: '' } } },
-  mounted () { this.checkIfAlreadyLoggedIn() },
-  methods: {
-    async checkIfAlreadyLoggedIn () {
-      try {
-        const data = await oauth2.status()
-        if (data.authenticated) this.$router.push('/auth-lab/oauth2')
-      } catch (e) { /* */ }
-    },
-    async register () {
-      this.error = ''; this.successMsg = ''
-      if (!this.form.username || !this.form.password) { this.error = '用户名和密码不能为空'; return }
-      this.loading = true
-      try {
-        const resp = await oauth2.register(this.form)
-        if (resp.ok) { this.successMsg = (resp.data && resp.data.message) || '注册成功'; setTimeout(() => this.$router.push('/auth-lab/oauth2'), 800) } else { this.error = (resp.data && resp.data.error) || '注册失败' }
-      } catch (e) { this.error = '网络错误: ' + e.message } finally { this.loading = false }
-    }
-  }
+const router = useRouter()
+const loading = ref(false)
+const error = ref('')
+const successMsg = ref('')
+const form = reactive({ username: '', password: '', email: '' })
+
+async function checkIfAlreadyLoggedIn () {
+  try {
+    const data = await oauth2.status()
+    if (data.authenticated) router.push('/auth-lab/oauth2')
+  } catch (e) { /* 未登录或服务未起，留在注册页 */ }
 }
+
+async function register () {
+  error.value = ''; successMsg.value = ''
+  if (!form.username || !form.password) { error.value = '用户名和密码不能为空'; return }
+  loading.value = true
+  try {
+    const resp = await oauth2.register(form)
+    if (resp.ok) {
+      successMsg.value = (resp.data && resp.data.message) || '注册成功'
+      setTimeout(() => router.push('/auth-lab/oauth2'), 800)
+    } else {
+      error.value = (resp.data && resp.data.error) || '注册失败'
+    }
+  } catch (e) { error.value = '网络错误: ' + e.message } finally { loading.value = false }
+}
+
+onMounted(checkIfAlreadyLoggedIn)
 </script>
 
 <template>

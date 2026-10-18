@@ -1,7 +1,10 @@
-<!-- Opaque Token 认证演示：不透明令牌（Redis 查证）。
-     token 存 localStorage（key: opaque_token），请求带 Authorization: Bearer；
-     服务端可控，登出时删 Redis key 即撤销。 -->
-<script>
+<!--
+  Opaque Token 认证演示（端口 18088，前缀 /api/opaque）。
+  token 存 localStorage（key: opaque_token），请求带 Authorization: Bearer；
+  服务端持有 token→用户 的映射，登出删 Redis key 即真正撤销。
+-->
+<script setup>
+import { ref, computed } from 'vue'
 import authOpaque from '../../../api/authOpaque'
 import PageHeader from '../../../components/PageHeader.vue'
 import StatusBar from '../../../components/StatusBar.vue'
@@ -9,58 +12,51 @@ import FormField from '../../../components/FormField.vue'
 import AppButton from '../../../components/AppButton.vue'
 import CodeBlock from '../../../components/CodeBlock.vue'
 
-export default {
-  name: 'OpaqueDemo',
-  components: { PageHeader, StatusBar, FormField, AppButton, CodeBlock },
-  data () {
-    return {
-      username: '',
-      password: '',
-      token: localStorage.getItem('opaque_token') || '',
-      loading: false,
-      profile: null,
-      responseText: ''
+const username = ref('')
+const password = ref('')
+const token = ref(localStorage.getItem('opaque_token') || '')
+const loading = ref(false)
+const profile = ref(null)
+const responseText = ref('')
+
+const isLoggedIn = computed(() => !!token.value)
+
+async function login () {
+  loading.value = true
+  try {
+    const resp = await authOpaque.login({ username: username.value, password: password.value })
+    responseText.value = JSON.stringify(resp.data, null, 2)
+    if (resp.ok && resp.data && resp.data.token) {
+      token.value = resp.data.token
+      localStorage.setItem('opaque_token', token.value)
+      await getProfile()
     }
-  },
-  computed: {
-    isLoggedIn () { return !!this.token }
-  },
-  methods: {
-    async login () {
-      this.loading = true
-      try {
-        const resp = await authOpaque.login({ username: this.username, password: this.password })
-        this.responseText = JSON.stringify(resp.data, null, 2)
-        if (resp.ok && resp.data && resp.data.token) {
-          this.token = resp.data.token
-          localStorage.setItem('opaque_token', this.token)
-          await this.getProfile()
-        }
-      } catch (e) { this.responseText = '错误: ' + e.message } finally { this.loading = false }
-    },
-    async callPublic () {
-      try {
-        const resp = await authOpaque.publicHello()
-        this.responseText = JSON.stringify(resp.data, null, 2)
-      } catch (e) { this.responseText = '错误: ' + e.message }
-    },
-    async getProfile () {
-      try {
-        const resp = await authOpaque.profile(this.token)
-        this.responseText = 'HTTP ' + resp.status + '\n' + JSON.stringify(resp.data, null, 2)
-        if (resp.ok) this.profile = resp.data
-      } catch (e) { this.responseText = '错误: ' + e.message }
-    },
-    async logout () {
-      try {
-        const resp = await authOpaque.logout(this.token)
-        this.token = ''
-        this.profile = null
-        localStorage.removeItem('opaque_token')
-        this.responseText = resp.ok ? '已登出，Token 已从 Redis 删除' : '登出失败'
-      } catch (e) { this.responseText = '错误: ' + e.message }
-    }
-  }
+  } catch (e) { responseText.value = '错误: ' + e.message } finally { loading.value = false }
+}
+
+async function callPublic () {
+  try {
+    const resp = await authOpaque.publicHello()
+    responseText.value = JSON.stringify(resp.data, null, 2)
+  } catch (e) { responseText.value = '错误: ' + e.message }
+}
+
+async function getProfile () {
+  try {
+    const resp = await authOpaque.profile(token.value)
+    responseText.value = 'HTTP ' + resp.status + '\n' + JSON.stringify(resp.data, null, 2)
+    if (resp.ok) profile.value = resp.data
+  } catch (e) { responseText.value = '错误: ' + e.message }
+}
+
+async function logout () {
+  try {
+    const resp = await authOpaque.logout(token.value)
+    token.value = ''
+    profile.value = null
+    localStorage.removeItem('opaque_token')
+    responseText.value = resp.ok ? '已登出，Token 已从 Redis 删除' : '登出失败'
+  } catch (e) { responseText.value = '错误: ' + e.message }
 }
 </script>
 
